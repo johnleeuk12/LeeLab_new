@@ -13,7 +13,7 @@ GLM analysis, without segmenting data by trial onset time.
 import numpy as np
 
 import matplotlib.pyplot as plt
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 from scipy import ndimage
 from scipy import stats
 from sklearn.linear_model import TweedieRegressor, Ridge, ElasticNet,ElasticNetCV
@@ -130,7 +130,9 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     
     for l in np.floor(Ln[lick_offset,0]*(1e3/window)):
         L_all_offset[0,int(l)-1] = 1 
-            
+     
+    L_all_mid = L_all-L_all_onset-L_all_offset
+    L_all_mid[0,L_all_mid[0,:]<0] = 0
     # for l in np.floor(D_ppc[n,6][:,0]*(1e3/window)):
     #     Rt[0,int(l)-1] = 1     
     
@@ -165,9 +167,10 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     
     X3_Lick_onset = np.zeros((ED1+ED2+1,np.size(Y,1)))
     X3_Lick_offset = np.zeros_like(X3_Lick_onset)
-    
+    X3_Lick_mid = np.zeros_like(X3_Lick_onset)
     X3_Lick_onset[0,:] = L_all_onset
     X3_Lick_offset[0,:] = L_all_offset
+    
 
     for lag in np.arange(ED1):
         X3_Lick_onset[lag+1,:-lag-1] = L_all_onset[0,lag+1:]
@@ -773,7 +776,7 @@ for c_ind in c_list:
             except:
             
                 print("Break, no fit") 
-# np.save('RTnew_1211.npy', Data,allow_pickle= True)  
+# np.save('RTnew_0620.npy', Data,allow_pickle= True)  
 
 # load Data from saved file   
 Data = np.load('RTnew_1211.npy',allow_pickle= True).item()
@@ -795,6 +798,9 @@ for n in np.arange(len(test)):
 # load data end
 
 # test = Data2.item()
+
+
+
 
 # test1 =test(7,2)
 # %% plot R score 
@@ -821,7 +827,7 @@ def make_RS(d_list):
         init_score =  Data[nn, c_ind-1]["init_score"]
         for a in np.arange(ax_sz):
             I[n,a] = np.mean(init_score[a])
-        I[n,ax_sz] = np.mean(Model_score)*1.5
+        I[n,ax_sz] = np.mean(Model_score)*1.
         
     
     fig, axes = plt.subplots(1,1, figsize = (10,8))
@@ -847,8 +853,8 @@ def make_RS(d_list):
 
 I1 = make_RS(d_list3)
 I2 = make_RS(d_list)
-I1 = I1[:,8]*1.5
-I2 = I2[:,8]*1.5
+I1 = I1[:,8]*1.
+I2 = I2[:,8]*1.
 bins = np.arange(0,0.8, 0.01)
 fig, axs= plt.subplots(1,1,figsize = (5,5))
 axs.hist(I1[I1>0.01],bins = bins,density=True, histtype="step",
@@ -867,8 +873,8 @@ for n in np.arange(np.size(good_list2,0)):
 
 
 # Data3 = np.load('RTnew_1121.npy',allow_pickle= True).item()
-listN = np.load('listBN.npy',allow_pickle= True)
-listN = listN.astype('int64')
+# listN = np.load('listBN.npy',allow_pickle= True)
+# listN = listN.astype('int64')
 # for n in listN:
 #     # if n not in good_listRu:
 #         Data[n,c_ind-1] = Data3[n,c_ind-1]
@@ -877,7 +883,8 @@ listN = listN.astype('int64')
 # del Data3
 
 # removing units with less than 2TTR
-good_listRu = np.setdiff1d(good_listRu,[49,44,87,59,63])
+# good_listRu = np.setdiff1d(good_listRu,[49,44,87,59,63])
+
 good_listRu = np.setdiff1d(good_listRu,np.arange(117,130))
 
 
@@ -980,7 +987,7 @@ d_list = good_listRu > 195
 # d_list3 = good_list <= 179
 d_list3 = good_listRu <= 195
 
-# Lic = np.where(good_listRu <180)
+# Lic = np.where(good_listRu <180)`
 # Lic = Lic[0][-1]
 good_list_sep = good_listRu[:]
 
@@ -1003,8 +1010,8 @@ w_length = [16,16,11,11,71,71,71,71] # window lengths for GLM
 
 Convdata = {}
 Convdata2 = {}
-pre = 25 # 10 40 
-post = 55 # 50 20
+pre = 10 # 10 40 
+post = 70 # 50 20
 xaxis = np.arange(post+pre)- pre
 xaxis = xaxis*1e-1
 
@@ -1022,7 +1029,7 @@ for n in np.arange(np.size(good_list_sep,0)):
     X4 = Data[nn,c_ind-1]["X4"]
     Model_score = Data[nn, c_ind-1]["score"]
     stim_onset2 =  Data[nn, c_ind-1]["stim_onset"]
-    stim_onset =  Data[nn, c_ind-1]["r_onset"]
+    stim_onset =  Data[nn, c_ind-1]["stim_onset"]
     # stim_onset= L_data[nn,1].T
     # stim_onset = stim_onset[0,1:-1]
     [T,p] = stats.ttest_1samp(np.abs(theta),0.05,axis = 1, alternative = 'greater') # set weight threshold here
@@ -1074,7 +1081,7 @@ for n in np.arange(np.size(good_list_sep,0)):
 # axes.plot(xaxis,np.mean(np.sum(weight2[a][:,nz_ind,:],1),1))
      
 # fig, axes = plt.subplots(1,1,figsize = (10,8))       
-# for a in [0]:
+# for a in [3]:
 #     list0 = (np.mean(Convdata[a],1) != 0)
 #     # error = np.std(Convdata[a],0)/np.sqrt(np.size(good_list_sep))
 #     # y = ndimage.gaussian_filter(np.mean(Convdata[a],0),2)   
@@ -1178,7 +1185,8 @@ def plt_ex_neurons2(n,pre,post,t1,t2):
     
     # plt.savefig("example neuron "+str(n)+ ".svg")
 
-plt_ex_neurons2(320,pre,post,t1,t2)
+plt_ex_neurons2(320,pre,post,30,5)
+plt_ex_neurons2(20,pre,post,0,5)
 
 # mY2 = np.zeros((20,70))
 # t3 = 0
@@ -1402,13 +1410,13 @@ for ind in [0,1]:
         if ind == 0:
             list0[Lic:Lg] = False # PPCIC
         elif ind == 1:           
-            list0[0:Lic] = False # PPCAC
+            list0[0:Lic+1] = False # PPCAC
         
         # list0ind = np.arange(Lg)
         # list0ind = list0ind[list0]
         list0ind = good_listRu[list0]
-        W = ndimage.uniform_filter(Convdata[f][list0,:],[0,0], mode = "mirror")
-        # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
+        # W = ndimage.uniform_filter(Convdata[f][list0,:],[0,2], mode = "mirror")
+        W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
         # W = ndimage.uniform_filter(Model_weight[f][list0,:],[0,2], mode = "mirror")
         # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,0:w_length1[f]],2),[0,0], mode = "mirror")
         # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,w_length2[f]:],2),[0,0], mode = "mirror")
@@ -1456,10 +1464,10 @@ for ind in [0,1]:
         # W3[:,68:] = 0
         W5[ind,f][0] = W1
         W5[ind,f][1] = W2
-        if f in [4]:
-            clim = [-0, 1]
+        if f in [2]:
+            clim = [-1, 1]
             fig, axes = plt.subplots(1,1,figsize = (10,10))
-            im1 = axes.imshow(W4[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "gray_r")
+            im1 = axes.imshow(W3[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "viridis")
             # im2 = axes[1].imshow(W2, aspect = "auto", interpolation = "None")
             # axes.set_xlim([,40])
             fig.subplots_adjust(right=0.85)
@@ -1519,12 +1527,12 @@ f1 = 5
 f2 = 4
 f3 = 4
 # f4 = 5
-ind = 0
+ind = 1
 list_lick = np.unique(np.concatenate((listOv[ind,0],listOv[ind,1])))
 
-# list_overlap = np.intersect1d(listOv[ind,f1],listOv[ind,f2])
-list_overlap = np.intersect1d(list_lick,listOv[ind,5])
-# list_overlap = np.intersect1d(list_overlap,listOv[ind,5])
+list_overlap = np.intersect1d(listOv[ind,f1],listOv[ind,f2])
+# list_overlap = np.intersect1d(list_lick,listOv[ind,5])
+# list_overlap = np.intersect1d(list_overlap,listOv[ind,5]) 
     
 print(len(list_overlap))
     
@@ -1571,7 +1579,7 @@ lstyles = ['solid','dotted','solid','dotted','solid','dotted','solid','solid','s
 
 Lic1 =np.argwhere(test_unique<194)[-1][0] +1 # 99 #134 # 78+1
 Lg1 =len(test_unique)-Lic1
-ind = 0# PPCIC or 1 PPCAC
+ind = 1# PPCIC or 1 PPCAC
 p = 0# positive or 1 negative
 
 fig, axes = plt.subplots(1,1,figsize = (10,5))
@@ -1594,7 +1602,7 @@ for f in np.arange(ax_sz):
     W = Convdata[f][list0,:]
     SD = np.std(W[:,:])
     # test = np.abs(W5[ind,f][p])>1*SD
-    test = W5[ind,f][p]>1.5*SD
+    test = W5[ind,f][p]>2*SD
     if ind ==0:        
         y = np.sum(test,0)/Lic1
     elif ind == 1:
@@ -1622,17 +1630,17 @@ for ind in [0,1]:
     fig.subplots_adjust(hspace=0)
     for p in [0,1]:
         for f in np.arange(ax_sz):
-            y1 = ndimage.gaussian_filter1d(np.sum(W5[ind,f][p],0),1)
-            y1 = y1/(np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0))
-            e1 = np.std(W5[ind,f][p],0)/np.sqrt((np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0)))
-            axes[p,f].plot(xaxis,y1,c = cmap[f],linestyle = 'solid', linewidth = 3)
-            axes[p,f].fill_between(xaxis,y1-e1,y1+e1,facecolor = cmap[f],alpha = 0.3)
-            # axes[p,f-3].set_xlim([-4,1])
-            scat = np.zeros((2,np.size(W5IC[f],1)))
-            pcat = np.zeros((2,np.size(W5IC[f],1)))
-            maxy[p,f] = np.max(np.abs(y1)+np.abs(e1))
-            maxy[p,f] = np.max([maxy[p,f],1])
-            if np.size(W5[ind,f][p],0 > 4):
+            if np.size(W5[ind,f][p],0) > 5:
+                y1 = ndimage.gaussian_filter1d(np.sum(W5[ind,f][p],0),1)
+                y1 = y1/(np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0))
+                e1 = np.std(W5[ind,f][p],0)/np.sqrt((np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0)))
+                axes[p,f].plot(xaxis,y1,c = cmap[f],linestyle = 'solid', linewidth = 3)
+                axes[p,f].fill_between(xaxis,y1-e1,y1+e1,facecolor = cmap[f],alpha = 0.3)
+                # axes[p,f-3].set_xlim([-4,1])
+                scat = np.zeros((2,np.size(W5IC[f],1)))
+                pcat = np.zeros((2,np.size(W5IC[f],1)))
+                maxy[p,f] = np.max(np.abs(y1)+np.abs(e1))
+                maxy[p,f] = np.max([maxy[p,f],1])
                 for t in np.arange(80):
                     if p == 0:
                         s1,p1 = stats.ttest_1samp(W5[ind,f][p][:,t],np.mean(e1),alternative = 'greater')
@@ -1646,7 +1654,11 @@ for ind in [0,1]:
                     axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*maxy[p,f] + 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
                 elif p ==1:
                     axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*-maxy[p,f] - 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
-
+            else:
+                for ln in np.arange(np.size(W5[ind,f][p],0)):
+                    axes[p,f].plot(xaxis,ndimage.gaussian_filter1d(W5[ind,f][p][ln,:],1),c = cmap[f],linestyle = 'solid', linewidth = 1)
+                if np.size(W5[ind,f][p],0) > 0:
+                    maxy[p,f] = np.max(W5[ind,f][p])
     
     for f in np.arange(ax_sz):
             axes[0,f].set_ylim([0, np.nanmax(maxy[:,f]+0.2)])
@@ -1892,10 +1904,11 @@ def TVFR_ana(n,f):
         Xb = Xmiss
     elif f == 5:
         Xb = XFA
-        Xb = (Xstim == 0)
+        # Xb = (Xstim == 0)
+        # Xb = (Xstim == 1)
     elif f == 7:
         Xb = XCR
-        Xb = (Xstim == 0)
+        # Xb = (Xstim == 0)
     
     comp = np.zeros((len(X),pre+post))   
     comp_n = np.zeros((len(X),pre+post))
@@ -1982,6 +1995,7 @@ def TVFR_ana_exp(n,f,r):
         r_list = np.arange(np.min([50,D_ppc[n,4][0][0]+15-200]))
         r_list = np.random.choice(np.arange(len(stim_onset)),50,replace = False)
         r_list = np.arange(20,70);
+        r_list = np.arange(40,np.size(stim_onset));
     X = X[r_list]
     stim_onset= stim_onset[r_list]                 
     Xstim = X[:,0]
@@ -1997,6 +2011,7 @@ def TVFR_ana_exp(n,f,r):
         X3[3] = (Xstim == 0)
         X3[4] = XHit
         X3[5] = XFA
+        X3[6] = Xmiss
         X3[7] = XCR
         if f == 2:
             Xb = (Xstim == 1) 
@@ -2011,7 +2026,7 @@ def TVFR_ana_exp(n,f,r):
             Xb = Xmiss  
         elif f == 7:
             Xb = XCR
-            Xb = (Xstim == 0)
+            # Xb = (Xstim == 0)
     elif r == 1:
         X3 = {};
         X3[2] = (Xstim == 1) 
@@ -2029,8 +2044,8 @@ def TVFR_ana_exp(n,f,r):
             # Xb = XFA
         elif f == 5:
             Xb = XFA
-            Xb = (Xstim == 0)*(X[:,1]==1)
-            # Xb = (Xstim == 1)*(X[:,1]==1)
+            Xb = (Xstim == 0)*(X[:,1]==1) # FA trials
+            # Xb = (Xstim == 1)*(X[:,1]==1) # Hit trials
         elif f == 6:
             Xb = Xmiss
         elif f == 7:
@@ -2091,6 +2106,7 @@ def TVFR_ana_r2(n,f):
 
 # %%
 
+fname2 = 'test'
 
 f = 5
 p = 0
@@ -2146,7 +2162,7 @@ for n in np.arange(len(comp)):
     min_all = np.min(minc) 
     # min_all  = 0;
 
-    if f in [4,5,6]:
+    if f in [4,5,6,7]:
         # if n not in [7,15]:
         # if n not in [40,41]:
         # if n not in [23,27]:
@@ -2242,7 +2258,7 @@ if f in [4,5,6,7]:
     
     fig, axes = plt.subplots(1,1,figsize = (10,5))
     peak = np.zeros((1,4))
-    for ind in [0,1]:
+    for ind in [0,1,2,3]:
         y = np.nanmean(W2[ind][listind[0],:],0)
         e = np.nanstd(W2[ind][listind[0],:],0)/np.sqrt(np.size(W2[ind],0))
         axes.plot(xaxis,y,color= cmap[ind],label = go_labels[ind])
@@ -2281,12 +2297,12 @@ if f in [4,5,6,7]:
 
 
 
-
-# %% code edit 24-11-19 no more early vs late
-
+# %% this is the current final code
 # divide up data for comparison
 # Go, Nogo are divided into early vs late
 # Hit, FA, CR are divided into R1, TR and R2
+# added comp2[4] which is the average trace during entire RT
+
 
 comp2= {};
 comp2[0] = np.zeros((len(comp),pre+post))
@@ -2318,9 +2334,12 @@ for n in np.arange(len(comp)):
         # if n not in [23,27]:
             comp2[1][n,:] = (np.mean(comp[nn],0)-min_all)/(max_all-min_all+s_ind)
     else:
-        if f in [3,5,7]:
+        if f in [3]:
             comp2[0][n,:] = (np.mean(comp[nn][XFA[nn],:],0)-min_all)/(max_all-min_all+s_ind)
             comp2[1][n,:] = (np.mean(comp[nn][XCR[nn],:],0)-min_all)/(max_all-min_all+s_ind)
+        elif f in [6]:
+            comp2[0][n,:] = (np.mean(comp[nn][:,:],0)-min_all)/(max_all-min_all+s_ind)
+            comp2[1][n,:] = (np.mean(comp[nn][:,:],0)-min_all)/(max_all-min_all+s_ind)
         else:
             comp2[0][n,:] = (np.mean(comp[nn][0:l,:],0)-min_all)/(max_all-min_all+s_ind)
             comp2[1][n,:] = (np.mean(comp[nn][l:,:],0)-min_all)/(max_all-min_all+s_ind)
@@ -2333,25 +2352,27 @@ for n in np.arange(len(comp)):
     
 
 
-# %%
+
 if f == 7:
     listind = np.zeros((1,len(comp)))
     for c in np.arange(len(comp)):
-        if np.sum(listOv[p,5] == listOv[p,7][[c]])  ==0:
+        # if np.sum(listOv[p,5] == listOv[p,7][[c]])  ==0:
             listind[0,c] = True 
     listind = (listind == 1)  
     
 elif f == 5:
     listind = np.zeros((1,len(comp)))
     for c in np.arange(len(comp)):
-        if np.sum(listOv[p,7] == listOv[p,5][[c]])  ==0:
+        # if np.sum(listOv[p,7] == listOv[p,5][[c]])  ==0:
+        # if np.sum(listOv[p,0] == listOv[p,4][[c]])  ==0 and np.sum(listOv[p,1] == listOv[p,4][[c]])  ==0:
             listind[0,c] = True 
     listind = (listind == 1)  
 elif f == 4:
     listind = np.zeros((1,len(comp)))
     for c in np.arange(len(comp)):
-        # if np.sum(listOv[p,7] == listOv[p,4][[c]])  ==1:
-        listind[0,c] = True 
+        # if np.sum(listOv[p,0] == listOv[p,4][[c]])  ==0 and np.sum(listOv[p,1] == listOv[p,4][[c]])  ==0:
+        #     if np.sum(listOv[p,5] == listOv[p,4][[c]])  ==0:
+                listind[0,c] = True 
     listind = (listind == 1)   
 
     listind2 = np.zeros((1,len(comp)))
@@ -2393,7 +2414,7 @@ else:
 if f in [4,5,6, 7]: #[4,5,7]:
     
     
-    for ind in [0,1,2,3]:
+    for ind in [0,1,2,3,4]:
         W[ind] = ndimage.uniform_filter(W2[ind][listind[0],:],[0,1], mode = "mirror")
     max_peak = np.argmax(np.abs(W[1]),1)
     max_ind = max_peak.argsort()
@@ -2413,7 +2434,7 @@ if f in [4,5,6, 7]: #[4,5,7]:
     
     fig, axes = plt.subplots(1,1,figsize = (10,5))
     peak = np.zeros((1,4))
-    for ind in [0,2,3]:
+    for ind in [0,1,2,3]:
         # y = np.nanmean(W2[ind][listind[0],:]-W2[2][listind[0],:],0)
         # e = np.nanstd(W2[ind][listind[0],:]-W2[2][listind[0],:],0)/np.sqrt(np.size(W2[ind],0))
         y = np.nanmean(W2[ind][listind[0],:],0)
@@ -2440,7 +2461,7 @@ if f in [4,5,6, 7]: #[4,5,7]:
         s[0],pp[0] = stats.ttest_ind(W2[0][listind[0],t], W2[2][listind[0],t],nan_policy = 'omit')
         s[1],pp[1] = stats.ttest_ind(W2[1][listind[0],t], W2[2][listind[0],t],nan_policy = 'omit')      
         s[2],pp[2] = stats.ttest_ind(W2[0][listind[0],t], W2[3][listind[0],t],nan_policy = 'omit')
-        # s[0],pp[0] = stats.ks_2samp(W2[1][listind[0],t], W2[2][listind[0],t])
+        s[0],pp[0] = stats.ks_2samp(W2[0][listind[0],t], W2[2][listind[0],t])
         # s[1],pp[1] = stats.ks_2samp(W2[1][listind[0],t], W2[3][listind[0],t])
         # s[2],pp[2] = stats.ks_2samp(W2[2][listind[0],t], W2[3][listind[0],t])
         for p_ind in [0,1,2]:
@@ -2451,10 +2472,10 @@ if f in [4,5,6, 7]: #[4,5,7]:
             c1 = pcat[p_ind][0,scat[p_ind][0,:]>0]
             # if p_ind == 2:
                 # axes.scatter(xaxis[scat[p_ind][0,:]>0],np.ones_like(xaxis[scat[p_ind][0,:]>0])*np.max(peak)*1.1+0.05*p_ind,marker='s',c = np.log10(c1),cmap = 'hot',clim = [-3,0])
-            if p_ind in [0,2]:
+            if p_ind in [0,1,2]:
                 axes.scatter(xaxis[scat[p_ind][0,:]>0],np.ones_like(xaxis[scat[p_ind][0,:]>0])*np.max(peak)*1.3+0.05*p_ind,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,0])
     axes.legend()    
-    axes.set_ylim([-0.,1])  
+    axes.set_ylim([-0.,0.7])  
     # fig,axes = plt.subplots(1,1,figsize = (10,5))
     # axes.plot(xaxis,np.mean(comp_lick,0))
     
@@ -2502,12 +2523,12 @@ from rastermap import Rastermap, utils
 
 W3 = {}
 for ind in [0,1,2,3,4]:
-    W3[ind] = ndimage.uniform_filter(W2[ind][listind[0],:],[0,1],mode = "mirror")
+    W3[ind] = ndimage.uniform_filter(W2[ind][listind[0],:],[0,4],mode = "mirror")
     # W3[ind] = W2[ind][listind[0],:],[0,3],mode = "mirror")
                              
 # W3[2] = (W3[2] + W3[3])/2
 # W3[0] = W3[1]
-ind =1
+ind =4
 # fit rastermap
 # note that D_r is already normalized
 model = Rastermap(n_PCs=64,
@@ -2535,28 +2556,45 @@ for ind in [0,1,2,3]:
 # for ind in [1,2,3]:
 #     ax.plot(np.mean(W3[ind],0))
 
-# %% FA specific
+# %% NO FA specific
 rng = np.random.default_rng()
 
 W4 = {}
+# ind 4 is RT all trials
 for ind in [0,1,2,3,4]:
     W4[ind] = W3[ind]
- 
+
+# W4[4] = W4[0]    
+
 W4[5] = np.zeros_like(W4[0])
 for tn in np.arange(np.size(W3[0],0)):
     W4[5][tn,:] = W4[0][tn,:]
 rng.shuffle(W4[5],axis = 0)
  
-# For FA    
-W4[4] = W3[2]
-W4[5] = W3[3]
-W4[6] = W3[4]
+# %%For FA 
+# for FA trials
+# rng = np.random.default_rng()
 
-W4[0] = W3[0]
-W4[7] = np.zeros_like(W4[0])
-for tn in np.arange(np.size(W3[0],0)):
-    W4[7][tn,:] = W4[0][tn,:]
-rng.shuffle(W4[7],axis = 0)
+
+
+
+W4 = {}
+for ind in [0,1,2,3]:
+    W4[ind] = W3[ind]
+W4[1] = W4[0]
+
+
+
+# # for Hit trials, add after FA 
+W4[4] = W3[0]
+W4[5] = W3[2]
+W4[6] = W3[3]
+
+# W4[0] = W3[0]
+# W4[7] = np.zeros_like(W4[0])
+# for tn in np.arange(np.size(W3[0],0)):
+#     W4[7][tn,:] = W4[0][tn,:]
+# rng.shuffle(W4[7],axis = 0)
 # rng.shuffle(W4[7],axis = 1)
 # %% stim encoding 
 
@@ -2602,8 +2640,8 @@ fig, axes = plt.subplots(1,1,figsize = (10,5))
 for ind in [0,1,2,3]:
     # y = np.nanmean(W2[ind],0)
     # e = np.nanstd(W2[ind],0)/np.sqrt(np.size(W2[ind],0))
-    y = np.nanmean(W2[ind],0)- np.nanmean(W2[2],0)
-    e = np.nanstd(W2[ind]-W2[2],0)/np.sqrt(np.size(W2[ind],0))
+    y = np.nanmean(W2[ind],0)#- np.nanmean(W2[2],0)
+    e = np.nanstd(W2[ind],0)/np.sqrt(np.size(W2[ind],0))
     axes.plot(xaxis,y,color = cmap[ind],label = go_labels[ind])
     axes.fill_between(xaxis,y-e,y+e,facecolor = cmap[ind],alpha = 0.3)
     peak[0,ind] = np.max(y)
@@ -2631,7 +2669,7 @@ for t in np.arange(pre+post):
             axes.scatter(xaxis[scat[p_ind][0,:]>0],np.ones_like(xaxis[scat[p_ind][0,:]>0])*np.max(peak)*1.1+0.05*p_ind,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,0])
 
 axes.legend()
-axes.set_ylim([-0.2,0.4])    
+# axes.set_ylim([-0.2,0.4])    
 
 # for ind in [0,1,2]:
 #     W[ind] = ndimage.uniform_filter(W2[ind],[0,2], mode = "mirror")
@@ -2648,28 +2686,46 @@ axes.set_ylim([-0.2,0.4])
 W4 = {}
 for ind in [0,1,2,3,4]:
     W4[ind] = ndimage.uniform_filter(W2[ind],[0,5], mode = "mirror")
+    
+W4[5] = np.zeros_like(W4[0])
+for tn in np.arange(np.size(W4[0],0)):
+        W4[5][tn,:] = W4[0][tn,:]
+rng.shuffle(W4[5],axis = 0)
 # %% PCA on RT subspace. 
+
+
 
 max_k = 20;
 
 sm = 0
 R = {}
-t1 = 0
-t2 = 20
-pca = PCA(n_components=20)
-R= W4[0][:,t1:t2].T
-test = pca.fit_transform(ndimage.gaussian_filter(R,[1,0]))        
+t1 = 20
+t2 = 80 # 25 if stim
+pca = PCA(n_components=max_k)
+R= W4[4][:,t1:t2].T
+test = pca.fit_transform(ndimage.gaussian_filter(R,[2,0]))        
 test = test.T
-
+expvar = pca.explained_variance_ratio_
 
 traj = {}
 for ind in np.arange(len(W4)):
-    traj[ind] = np.dot(W4[ind][:,t1:t2].T,pca.components_.T)
-    traj[ind] = traj[ind] - np.mean(traj[ind][0:5,:],0)
+    traj[ind] = np.dot(W4[ind][:,0:t2].T,pca.components_.T)
+    traj[ind] = ndimage.gaussian_filter(traj[ind],[3,0]) #- np.mean(traj[ind][0:10,:],0)
+
+fig, axes = plt.subplots(3,1,figsize = (10,15))
+
+for f_ind in [0,1,2]:
+    for ind in [0,1]:
+        axes[f_ind].plot(xaxis,traj[ind][:,f_ind])
+
+fig, axes = plt.subplots(1,1,figsize=(10,10))
+for ind in [0,1]:
+    axes.plot(traj[ind][:,0],traj[ind][:,1])
 
 # %%
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from matplotlib import cm
+from scipy import linalg
 
 
 def draw_traj5(traj,v):
@@ -2679,7 +2735,7 @@ def draw_traj5(traj,v):
     # cmap_names = ['autumn','autumn','winter','winter']
     styles = ['solid','solid','solid','dotted','solid','dotted','dashed','dashed']
     cmap_names = ['autumn','autumn','winter','winter']
-    for ind in [0,2,3,4,5]: # np.arange(trmax):
+    for ind in [0,1]: # np.arange(trmax):
             x = traj[ind][:,0]
             y = traj[ind][:,1]
             z = traj[ind][:,2]
@@ -2694,11 +2750,11 @@ def draw_traj5(traj,v):
         
             if ind == 0:
                 colors = cm.autumn(np.linspace(0,1,80))
-                ax.auto_scale_xyz(x,y,z)
+                # ax.auto_scale_xyz(x,y,z)
             elif ind == 1:
                 colors = cm.winter(np.linspace(0,1,80))
-                # ax.auto_scale_xyz(x,y,z)
-            elif ind in [4,5]:
+                ax.auto_scale_xyz(x,y,z)
+            elif ind in [4]:
                 colors = cm.winter(np.linspace(0,1,80))
             else :
                 colors = cm.gray(np.linspace(0,1,80))
@@ -2718,17 +2774,22 @@ def draw_traj5(traj,v):
             for m in [0]:
                 ax.scatter(x[m], y[m], z[m], marker='o', color = "black")
                 
-                
+draw_traj5(traj,0)           
+  
+tlabels = ['early','late','r1','r2','TR','shuffled']
+
+# savemat('D:\DATA\_traj_' + fname2 + '.mat',{tlabels[f]:traj[f] for f in np.arange(6)})
+
 # %% 
-draw_traj5(traj,0)
+# draw_traj5(traj,0)
 
-
+k = 2
 def traj_dist(array):
-    array = array[:,[0,1,3]]
-    distance  =np.zeros((1,t2-t1))
-    for t in np.arange(t2-t1-1):
-        distance[0,t] = np.linalg.norm(array[t+1,:]-array[t,:])
-    return np.sum(distance)
+    array = array[:,[0,1,2]]
+    distance  =np.zeros((1,t2-0))
+    for t in np.arange(t2-0-1):
+        distance[0,t] = np.linalg.norm(array[t+1,0:k]-array[t,0:k])
+    return distance
 
 
 # g = [traj_dist(traj[0]),traj_dist(traj[1]),traj_dist(traj[2]),traj_dist(traj[3]),traj_dist(traj[5])] 
@@ -2743,33 +2804,49 @@ def traj_dist(array):
 # %% trajectory distance with n iterated.
 max_k = 20;
 
-sm = 0
+sm = 5
 R = {}
-t1 = 0
-t2 = 20
-
+t1 = 20
+t2 = 80
 total_n = np.size(W4[0],0)
 n_cv = 20;
-g = np.zeros((6,n_cv))
-for cv in np.arange(n_cv):
-    n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.9)),replace = False)       
-    pca = PCA(n_components=20)
-    R= W4[0][n_list,t1:t2].T
-    test = pca.fit_transform(ndimage.gaussian_filter(R,[1,0]))        
-    test = test.T
-  
-    traj = {}
-    for ind in np.arange(len(W4)):
-        traj[ind] = np.dot(W4[ind][n_list,t1:t2].T,pca.components_.T)
-        traj[ind] = traj[ind] - np.mean(traj[ind][0:5,:],0)
-    for g_ind in [0,2,3,4,5]:
-        g[g_ind,cv] =traj_dist(traj[g_ind])
-        
-fig, axes= plt.subplots(1,1,figsize = (5,5))
-axes.bar(np.arange(np.size(g,0)),np.mean(g,1))
-axes.errorbar(np.arange(np.size(g,0)),np.mean(g,1),np.std(g,1), fmt="o", color="k", barsabove = True, capsize = 7, markersize = 0)
 
+def calc_traj(t1,t2,n_cv,sm):
+    g = {}
+    g[0] = np.zeros((n_cv,t2))
+    g[1] = np.zeros((n_cv,t2))
+    for cv in np.arange(n_cv):
+        n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.75)),replace = False)       
+        pca = PCA(n_components=20)
+        R= W4[4][n_list,t1:t2].T
+        test = pca.fit_transform(ndimage.gaussian_filter(R,[sm,0]))        
+        test = test.T
+      
+        traj = {}
+        for ind in np.arange(len(W4)):
+            traj[ind] = np.dot(W4[ind][n_list,0:t2].T,pca.components_.T)
+            traj[ind] = traj[ind]# - np.mean(traj[ind][0:5,:],0)
+        g[0][cv,:] =traj_dist(traj[0])
+        g[1][cv,:] =traj_dist(traj[1])
+    return g
 
+g = calc_traj(t1,t2,n_cv,sm)
+
+fig, axes= plt.subplots(1,1,figsize = (10,5))
+for ind in [0,1]:
+    yd = ndimage.gaussian_filter1d(g[ind],3)
+    axes.plot(xaxis,np.mean(yd,0))
+    axes.fill_between(xaxis,np.mean(yd,0)-np.std(yd,0),np.mean(yd,0)+np.std(yd,0),alpha = 0.3)
+axes.set_ylim([0,0.35])
+
+# fig, axes= plt.subplots(1,1,figsize = (5,5))
+# axes.bar(np.arange(np.size(g,0)),np.mean(g,1))
+# axes.errorbar(np.arange(np.size(g,0)),np.mean(g,1),np.std(g,1), fmt="o", color="k", barsabove = True, capsize = 7, markersize = 0)
+# axes.set_ylim([0,20])
+
+# stats.ttest_ind(g[0,:], g[1,:])
+
+# savemat('D:\DATA\_distance_' + fname2 + '.mat',{"distance" :g})
 
 # %% calculate euclidean distance
 
@@ -2790,9 +2867,49 @@ fig, axes = plt.subplots(1,1,figsize = (10,10))
 # ED = ED/np.max(ED)
 imshowobj = axes.imshow(ED,cmap = "hot")
 # imshowobj = axes.imshow(Overlap[:,:,0],cmap = "hot_r")
-# imshowobj.set_clim(5, 30) #correct
+imshowobj.set_clim(0, np.max(ED)) #correct
 plt.colorbar(imshowobj) #adjusts scale to value range, looks OK
 
+# %% euclidean distanceby time
+
+max_k = 20;
+
+sm = 1
+R = {}
+t1 = 20
+t2 = 80
+total_n = np.size(W4[0],0)
+n_cv = 20;
+def calc_dist(t1,t2,n_cv,sm):
+    dis = np.zeros((n_cv,t2))
+    max_dis = np.zeros((n_cv,1))
+    for cv in np.arange(n_cv):
+        n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.75)),replace = False)       
+        pca = PCA(n_components=20)
+        R= W4[4][n_list,t1:t2].T
+        test = pca.fit_transform(ndimage.gaussian_filter(R,[sm,0]))        
+        test = test.T
+      
+        traj = {}
+        for ind in np.arange(len(W4)):
+            traj[ind] = np.dot(W4[ind][n_list,0:t2].T,pca.components_.T)
+            traj[ind] = traj[ind]# - np.mean(traj[ind][0:5,:],0)
+        for t in np.arange(t2):
+            dis[cv,t] = np.linalg.norm(traj[0][t,0:k]-traj[1][t,0:k])
+        max1 = np.max(np.linalg.norm(traj[0][:],axis = 1,keepdims = True))
+        max2 = np.max(np.linalg.norm(traj[0][:],axis = 1,keepdims = True))
+        max_dis[cv,0] = np.max([max1,max2])
+    return dis, max_dis
+
+dis, max_dis = calc_dist(t1,t2,n_cv,sm)
+
+max_dis = 1
+dis2 = ndimage.gaussian_filter1d(dis/max_dis,3)
+
+fig, axes = plt.subplots(1,1,figsize = (10,5))
+axes.plot(xaxis,np.mean(dis2,0))
+axes.fill_between(xaxis,np.mean(dis2,0)-np.std(dis2,0),np.mean(dis2,0)+np.std(dis2,0),alpha = 0.3)
+# axes.set_ylim(0.3, 0.9)
 
 
 # %% comparing stim response
@@ -2935,10 +3052,9 @@ for n in np.arange(len(comp)):
 # axes.set_ylim([-.35,.8])
 # stats.ttest_ind(lick_corr_AC.T,lick_corr_IC.T)
 
-# %% PCA on individual 
+# %% PCA on individual Subspace overlap calculation 
 
 
-pca = {}
 max_k = 20;
 # fig, axs = plt.subplots(4,6,figsize = (5,6))
 
@@ -2946,69 +3062,87 @@ max_k = 20;
 # W3[3] = W4[3]
 sm = 0
 R = {}
-t1 = 0
+t1 = 60
 t2 = 80
-for g in  np.arange(len(W4)):
-    pca[g] = PCA(n_components=20)
-    R[g] = W4[g][:,t1:t2].T
-    test = pca[g].fit_transform(ndimage.gaussian_filter(R[g],[1,0]))        
-    test = test.T
+n_cv = 20   
+k = 15
+def calc_subspace(t1,t2,sm):
+    pca = {} 
+    for g in  np.arange(len(W4)):
+        pca[g] = PCA(n_components=15)
+        R[g] = W4[g][:,t1:t2].T
+        test = pca[g].fit_transform(ndimage.gaussian_filter(R[g],[sm,0]))        
+        test = test.T
     # for t in range(0,5):
     #     axs[g,t].plot(test[t,:], linewidth = 2)
     # axs[g,5].plot(np.cumsum(pca[g].explained_variance_ratio_), linewidth = 4)
-
     
     
-# %%
-
-from scipy import linalg
-
-n_cv = 20   
-
-
-Overlap = np.zeros((len(W4),len(W4),n_cv)); # PPC_IC
-# Overlap_across = np.zeros((trmax,trmax,n_cv));
-total_n = np.size(W4[0],0)
-
-k1 = 10
-k2 = 19
-
-for cv in np.arange(n_cv):
-    n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.9)),replace = False)    
-    U = {}
-    for g in  np.arange(len(W4)):
-        pca[g] = PCA(n_components=20)
-        test = pca[g].fit_transform(ndimage.gaussian_filter(R[g][:,n_list],[1,0]))  
+    Overlap = np.zeros((len(W4),len(W4),n_cv)); # PPC_IC
+    # Overlap_across = np.zeros((trmax,trmax,n_cv));
+    total_n = np.size(W4[0],0)
+    
+    k1 = k
+    k2 = 19
+    
+    for cv in np.arange(n_cv):
+        n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.80)),replace = False)    
+        U = {}
+        for g in  np.arange(len(W4)):
+            pca[g] = PCA(n_components=15)
+            test = pca[g].fit_transform(ndimage.gaussian_filter(R[g][:,n_list],[1,0]))  
+            
         
+        for g1 in np.arange(len(W4)): #np.arange(trmax):
+           for g2 in np.arange(len(W4)): # np.arange(trmax):
+               S_value = np.zeros((1,k1))
+               for d in np.arange(0,k1):
+                   S_value[0,d] = np.abs(np.dot(pca[g1].components_[d,:], pca[g2].components_[d,:].T))
+                   S_value[0,d] = S_value[0,d]/(np.linalg.norm(pca[g1].components_[d,:])*np.linalg.norm(pca[g2].components_[d,:]))
+               Overlap[g1,g2,cv] = np.max(S_value)
+    return pca, Overlap
+
+
+d_overlap = np.zeros((n_cv,7))
+p = 0
+for t in np.arange(7):
+    pca, O = calc_subspace(t*10,t*10+20,5)
+    d_overlap[:,p] = O[0,1,:]
+    p +=1
+
+d2 = d_overlap*1
     
-    for g1 in np.arange(len(W4)): #np.arange(trmax):
-       for g2 in np.arange(len(W4)): # np.arange(trmax):
-           S_value = np.zeros((1,k1))
-           for d in np.arange(0,k1):
-               S_value[0,d] = np.abs(np.dot(pca[g1].components_[d,:], pca[g2].components_[d,:].T))
-               S_value[0,d] = S_value[0,d]/(np.linalg.norm(pca[g1].components_[d,:])*np.linalg.norm(pca[g2].components_[d,:]))
-           Overlap[g1,g2,cv] = np.max(S_value)
+fig, axes = plt.subplots(1,1,figsize = (10,5))
+axes.plot(np.arange(7),np.mean(d2,0))
+axes.fill_between(np.arange(7),np.mean(d2,0)-np.std(d2,0),np.mean(d2,0)+np.std(d2,0),alpha = 0.3)
+axes.set_ylim([0.1,0.8])
+# import pandas as pd
+# for k in np.arange(n_cv):
+# #     Overlap[2,3,k] = (Overlap[2,3,k] + Overlap[1,3,k])/2
+# #     Overlap[3,2,k] = (Overlap[2,3,k])
+#     Overlap[0,2,k] = 0.329
+#     Overlap[2,0,k] = 0.329
 
-    
-import pandas as pd
-for k in np.arange(n_cv):
-#     Overlap[2,3,k] = (Overlap[2,3,k] + Overlap[1,3,k])/2
-#     Overlap[3,2,k] = (Overlap[2,3,k])
-    Overlap[0,2,k] = 0.329
-    Overlap[2,0,k] = 0.329
-fig, axes = plt.subplots(1,1,figsize = (10,10))
+# savemat('D:\DATA\Overlap_' + fname2 + '.mat',{"O" :Overlap})
 
+pca, Overlap = calc_subspace(20, 80, 5)
+# fig, axes = plt.subplots(1,1,figsize = (10,10))
+np.mean(Overlap[0,1,:])
 
-
-imshowobj = axes.imshow(np.mean(Overlap,2),cmap = "hot_r")
-# imshowobj = axes.imshow(Overlap[:,:,0],cmap = "hot_r")
-imshowobj.set_clim(0.15, 1) #correct
-plt.colorbar(imshowobj) #adjusts scale to value range, looks OK
+# imshowobj = axes.imshow(np.mean(Overlap,2),cmap = "hot_r")
+# # imshowobj = axes.imshow(Overlap[:,:,0],cmap = "hot_r")
+# imshowobj.set_clim(0.15, 1) #correct
+# plt.colorbar(imshowobj) #adjusts scale to value range, looks OK
 
 
-stats.ks_2samp(Overlap[1,2,:],Overlap[1,3,:])
+# stats.normaltest(Overlap[0,1,:])
+# sh_mean = np.mean(Overlap[5,:-1,:],0)
 
+# # sh_mean = np.reshape(sh_mean,(1,-1))
 
+# stats.ks_2samp(Overlap[1,2,:],sh_mean)
+
+# stats.ttest_ind(Overlap[0,1,:],sh_mean)
 # O = np.concatenate((Overlap[0,2,:],Overlap[0,3,:]))
 # O = np.concatenate((O,Overlap[2,3,:]))
 # O = O

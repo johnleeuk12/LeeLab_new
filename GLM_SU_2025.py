@@ -35,7 +35,7 @@ Decided to separate Rule and run GLM
 import numpy as np
 
 import matplotlib.pyplot as plt
-from scipy.io import loadmat
+from scipy.io import loadmat,savemat
 from scipy import ndimage, stats, sparse
 from sklearn.linear_model import TweedieRegressor, Ridge, ElasticNet, Lasso, PoissonRegressor
 from sklearn.model_selection import cross_validate
@@ -48,7 +48,7 @@ from sklearn import preprocessing
 
 # %%
 
-fname = 'SUdata_AC2.mat'
+fname = 'SUdata_IC.mat'
 
 fdir = 'D:\Python\Data'
 
@@ -135,6 +135,7 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
     # extract spike and lick times to bins
     
     timepoint = int(max(D_ppc[n,2][:,0])*1e3)+t_period+100;
+    ttr = int(D_ppc[n,6][0])
     bins = np.arange(0,timepoint,window)
     data =D_ppc[n,0][:,0]*1e3    
     data_lick = D_ppc[n,1][:,0]*1e3    
@@ -146,25 +147,13 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
     # L_all - ndimage.gaussian_filter1d(L_all,sigma)
     stim_onset = np.floor(D_ppc[n,2][:,0]*(1e3/window)).astype(int)
     lick_time = np.floor(D_ppc[n,1][:,0]*(1e3/window)).astype(int)
+    lick_time = lick_time[lick_time<np.size(S_all)]
     # r_onset = np.floor(D_ppc[n,2][:,1]*(1e3/window)).astype(int)
-    
+
+
     ### Extract Lick ### 
-    # L_all_onset = np.zeros_like(L_all)
-    # L_all_offset = np.zeros_like(L_all)
-    # # Rt = np.zeros((1,len(time_ind)-1))
-    # Ln = np.array(D_ppc[n,1])
-    # InterL = Ln[1:,:]- Ln[:-1,:]
-    # lick_onset= np.where(InterL[:,0]>2)[0] # lick bout boundary =2
-    # lick_onset = lick_onset+1
-    # lick_offset = lick_onset-1
-            
-    # for l in np.floor(Ln[lick_onset,0]*(1e3/window)):
-    #     L_all_onset[int(l)-1] = 1
-    
-    # for l in np.floor(Ln[lick_offset,0]*(1e3/window)):
-    #     L_all_offset[int(l)-1] = 1 
-            
-    l_w = int(1000/window)
+    # lag window for Lick = -500, +500 ms       
+    l_w = int(200/window)
     L_all2 = basis_function2(np.size(S_all),lick_time,1);
     L_all2 = L_all2.toarray()
     L_del = np.zeros((2*l_w,np.size(L_all)))
@@ -180,6 +169,31 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
     L_del = L_del/np.max(L_del)
     L_del = sparse.csr_matrix(L_del)
     ### Extract Lick End ###
+    
+    
+    ### Extract reward onset ###
+    # Since reward is given at the second lick during reward period, we define 
+    # reward onset as the second lick after reward period onset (1.5seconds post stim)
+    
+
+    reward_time =[]
+    for tr in np.arange(np.size(stim_onset)):
+        if D_ppc[n,3][tr,0] ==1:
+            r_temp = lick_time-stim_onset[tr]-1.5*1e3/window
+            if np.sum(r_temp>0)>0: # first lick
+                reward_time = np.append(reward_time, lick_time[np.argwhere(r_temp>0)[0]])
+    reward_time= reward_time.astype(int)
+    
+    # reward encoding, post 500ms
+    # r_w = int(500/window)
+    # R_all2 = basis_function2(np.size(S_all),reward_time,1);
+    # R_all2 = R_all2.toarray()
+    # R_del = np.zeros((r_w,np.size(S_all)))
+    # for lag in np.arange(1,r_w):
+    #     R_del[lag,lag:] = R_all2[0,:-lag]
+    # R_del[0,:] = R_all2[0,:]
+    # R_del = R_del/np.max(R_del)
+    # R_del = sparse.csr_matrix(R_del)
 
     # L_del = L_del.toarray()
     
@@ -200,6 +214,11 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
         sigma = 1
         T1= D_ppc[n,3] # trialtype by outcome
         T2= D_ppc[n,4] # trialtype by trialtype
+        rt_ind = np.where(T2[:,1]>10000)[0]
+        for tr in rt_ind:
+            if T1[tr,1] ==1:
+                T1[tr,0] = 1
+                T1[tr,1] = 0
         
         # stim 
         # only during stim
@@ -279,6 +298,7 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
         X[4] = X_Miss
         X[5] = X_CR
         X[6] = X_FA
+        # X[7] = R_del
         # X[7] = X3_Lick_onset
         # X[8] = X3_Lick_offset
         X[7] = X_5
@@ -294,17 +314,17 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
     else : 
         X = Xp
     
-    
+    cs = sum(T2[:,1]== 12112) + sum(T2[:,1]== 12122)
     Xr = {}
     if r == 1: # Rule 1
         start = 0
         end = 150
     elif r == 2: # Rule 2
-        start = 260
+        start = 200 + np.max([ttr + 15,cs]) 
         end = np.min([410,len(stim_onset)])
     elif r == 3: # Rule 3
         start = 200
-        end = 260
+        end = 200 + ttr + 15
     t_start = stim_onset[start]-int(prestim/window)
     t_end = stim_onset[end]+int(t_period/window)
         
@@ -313,8 +333,8 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
     S_all = S_all[t_start:t_end]
     L_all = L_all[t_start:t_end]
     L_del = L_del[:,t_start:t_end]
-    
-    return X,Xr, S_all, L_del, stim_onset[start:end],start,end,t_start
+    R_del = [] #R_del[:,t_start:t_end]
+    return X,Xr, S_all, L_del,R_del, stim_onset[start:end] ,reward_time[start:end],start,end,t_start
     
 
 
@@ -322,19 +342,19 @@ def build_GLM(D_ppc,n,window,sigma,Xp,r):
 # %% GLM
 
 def run_GLM(n,fig_on,Xp,r):    
-    Xall,X,Y, L_all, stim_onset,x_start,x_end,t_start = build_GLM(D_ppc,n,window,sigma,Xp,r)
+    Xall,X,Y, L_all,R_all, stim_onset,r_onset,x_start,x_end,t_start = build_GLM(D_ppc,n,window,sigma,Xp,r)
     ss= ShuffleSplit(n_splits=k, test_size=0.30, random_state=0)
     T1= D_ppc[n,3][x_start:x_end,:] # trialtype by outcome
     T2= D_ppc[n,4][x_start:x_end,:]# trialtype by trialtyper
     stim_onset = stim_onset-t_start
-    
+    r_onset = r_onset-t_start
     
     # finding alpha value
     X4 = sparse.csr_array(np.zeros_like(Y))
     Nvar= len(X)
     for a in np.arange(Nvar):
         X4 = sparse.vstack([X4,X[a]])
-    alphas = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3,1e-2]
+    alphas = [1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3,1e-2,1e-1]
     compare_score = np.zeros(len(alphas))
     for a in np.arange(len(alphas)):
         reg = PoissonRegressor(alpha = alphas[a], fit_intercept=True,max_iter = 1000) #Using a linear regression model with Ridge regression regulator set with alpha = 1
@@ -569,7 +589,7 @@ def run_GLM(n,fig_on,Xp,r):
         ax2.set_title('unit_'+str(n+1))
         sc = np.mean(score3)
         ax4.set_title(f'{sc:.2f}')
-        fname = 'D:/GitHub/LeeLab/img/'
+        fname = 'D:/GitHub/LeeLab/img/IC/'
         plt.savefig(fname + 'r'+ str(r) +'neuron'+str(n+1) + '.svg')
         plt.savefig(fname + 'r'+ str(r) +'neuron'+str(n+1) + '.png')
         plt.show()
@@ -614,29 +634,38 @@ good_list = np.arange(np.size(D_ppc,0))
 # %% Run GLM
 
 Data = {}
+# Data = np.load('SU_PPC2_06262025.npy',allow_pickle= True).item()
+
 Xall = []
 len_lick = 0
 len_event = 0
 for n in good_list:
     if len(D_ppc[n,2]) == len_lick and len(D_ppc[n,3]) == len_event:
-        Xp = Xall
+        Xp = []; #Xall
     else:
         Xp = []
-        len_lick = len(D_ppc[n,2])
-        len_event = len(D_ppc[n,3])
+    counter = 0
     for r in [1,2,3]:
         try:                
             Xall, inter, TT, Y, max_it, score3, init_score, yhat,X4, theta, alp,stim_onset = run_GLM(n,1,Xp,r)
             Data[n,r] = {"X":Xall,"coef" : TT, "score" : score3, 'Y' : Y,'init_score' : init_score,
                                "intercept" : inter,"yhat" : yhat, "X4" : X4, "theta": theta,"alpha":alp,"stim_onset" : stim_onset}
+            len_lick = len(D_ppc[n,2])
+            len_event = len(D_ppc[n,3])
         except KeyboardInterrupt:
             break
         except:
             print("Break, no fit") 
+            counter += 1
+        
+        if counter == 3:
+            Xall = []
+             
+
            
 
-# np.save('SU_AC_02032025_R2.npy', Data,allow_pickle= True)     
-Data = np.load('SU_IC_02032025_R2.npy',allow_pickle= True).item()
+np.save('SU_IC3_06262025.npy', Data,allow_pickle= True)     
+# Data = np.load('SU_PPC2_06262025.npy',allow_pickle= True).item()
 # # test = Data2.item()
 
 # # test1 =test(7,2)
@@ -656,6 +685,8 @@ for n in good_list:
              
 for r in [1,2,3]:
     good_list_rule[r] = np.array(good_list_rule[r])
+
+# good_list_rule[r] = np.delete(good_list_rule[r],[68,79])
 
 # %%
 
@@ -682,7 +713,7 @@ def make_RS(r_ind):
         # Rsstat = {}
     for a in np.arange(ax_sz):
         Rs = I[:,a]
-        Rs = Rs[Rs>0.01]
+        Rs = Rs[Rs>0.02]
         axes.scatter(np.ones_like(Rs)*(a-0.3),Rs,facecolors=cmap[a], edgecolors= cmap[a])
         axes.scatter([(a-0.3)],np.mean(Rs),c = 'k',s = 500, marker='_')    
             # Rs = Rs/(Rmax+0.03)
@@ -732,7 +763,7 @@ def TV_hist(r_ind):
             TV = np.append(TV, max_it)
     
     TV = TV[1:]
-    ax_sz = 12
+    ax_sz = 8
     B = np.zeros((1,ax_sz))
     for f in np.arange(ax_sz):
         B[0,f] = np.sum(TV == f)
@@ -744,7 +775,7 @@ def TV_hist(r_ind):
     # axes.bar(np.arange(ax_sz)*3,B[0,:], color = cmap, edgecolor = edgec, alpha = 1, width = 0.5, linewidth = 2,hatch = '/')
     axes.set_ylim([0,0.8])
             
-TV_hist(2)
+TV_hist(1)
 
 
 
@@ -778,21 +809,90 @@ def extract_onset_times(D_ppc,n,r):
 #     stim_onset = extract_onset_times(D_ppc,nn,r)
 #     Data[nn,r]["stim_onset"] = stim_onset
     
+listOv = {}
+
+def extract_r_onset_times(D_ppc,n,r):
+    ttr = int(D_ppc[n,6][0])
+    timepoint = int(max(D_ppc[n,2][:,0])*1e3)+t_period+100;
+    bins = np.arange(0,timepoint,window)  
+    [S_all,bins] = np.histogram(D_ppc[n,0][:,0]*1e3 ,bins)
+    stim_onset = np.floor(D_ppc[n,2][:,0]*(1e3/window)).astype(int)
+    lick_time = np.floor(D_ppc[n,1][:,0]*(1e3/window)).astype(int)
+    lick_time = lick_time[lick_time<np.size(S_all)] 
+        ### Extract reward onset ###
+        # Since reward is given at the second lick during reward period, we define 
+        # reward onset as the second lick after reward period onset (1.5seconds post stim)
+        
+
+    reward_time =[]
+    for tr in np.arange(np.size(stim_onset)):
+        if D_ppc[n,3][tr,0] ==1 : # or D_ppc[n,3][tr,3] ==1 :
+            r_temp = lick_time-stim_onset[tr]-1.5*1e3/window
+            if np.sum(r_temp>0)>0: # first lick
+                reward_time = np.append(reward_time, lick_time[np.argwhere(r_temp>0)[0]])
+
+        
+    reward_time= reward_time.astype(int)
+    T2= D_ppc[n,4]
+    cs = sum(T2[:,1]== 12112) + sum(T2[:,1]== 12122)
+    if r == 1: # Rule 1
+        start = 0
+        end = 150
+    elif r == 2: # Rule 2
+        start = 200 + np.max([ttr + 15,cs]) 
+        end = np.min([410,len(stim_onset)])
+    elif r == 3: # Rule 3
+        start = 200
+        end = 200 + ttr + 15
+    elif r == 0:
+        start = 0 
+        end = np.min([410,len(stim_onset)])
+    # t_start = stim_onset[start]-int(prestim/window)
+    # t_end = stim_onset[end]+int(t_period/window)
     
-# %% Normalized population average of task variable weights
-# c_ind = 1
-r =   2
+    # if r == 1: # Rule 1
+    #     start = 0
+    #     end = 150
+    # elif r == 2: # Rule 2
+    #     start = 260
+    #     end = np.min([410,len(stim_onset)])
+    # elif r == 3: # Rule 3
+    #     start = 200
+    #     end = 260
+    start2 = np.min(np.where(reward_time > stim_onset[start]))
+    end2 = np.max(np.where(reward_time < stim_onset[end]))
+    reward_time = reward_time - (stim_onset[start]-int(prestim/window))
+    return reward_time[start2:end2+1]
+        
 
 
-good_list_sep =good_list_rule[r]
-weight_thresh = 5*1e-2
 
+# %%
 cmap = ['black','tab:blue','tab:blue','tab:red','tab:grey','tab:green','tab:orange']
-clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA"]
-lstyles = ['solid','solid','dotted','solid','dotted','solid','solid']
+clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA",'Rew']
+lstyles = ['solid','solid','dotted','solid','dotted','solid','solid','solid']
 ax_sz = len(cmap)
 
-w_length = [40,30,30,140,140,140,140] # window lengths for GLM 
+W5 = {};
+b_count = {}
+Conv_all = {}
+for r_ind in [1,2,3]: # 0 is PPCIC, 1 is PPCAC
+    b_count[r_ind] = np.zeros((2,ax_sz))
+    for f in np.arange(ax_sz):
+            W5[r_ind,f] = {}
+            
+            
+# %% Normalized population average of task variable weights
+# c_ind = 1
+r = 3
+region = 'IC'
+
+good_list_sep =np.unique(np.concatenate((good_list_rule[1],good_list_rule[2],good_list_rule[3])))
+weight_thresh = 5*1e-2
+
+
+
+w_length = [8,30,30,140,140,140,140] # window lengths for GLM 
 # w_length = [16,16,11,11,60,60,60,60] # window lengths for GLM 
 
 
@@ -801,7 +901,7 @@ Convdata2 = {}
 pre = 40 # 10 40 
 post = 120 # 50 20
 xaxis = np.arange(post+pre)- pre
-xaxis = xaxis*1e-1
+xaxis = xaxis*5e-2
 
 
 
@@ -813,110 +913,118 @@ for a in np.arange(ax_sz):
 good_list5 = [];
 for n in np.arange(np.size(good_list_sep,0)):
     nn = int(good_list_sep[n])
-    # X, Y, Lm, L_on, L_off, stim_onset, r_onset, Xstim = import_data_w_Ca(D_ppc,nn,window,c_ind)
-    Model_coef = Data[nn, r]["coef"]
-    theta = Data[nn,r]["theta"]
-    X4 = Data[nn,r]["X4"].toarray()
-    Model_score = Data[nn, r]["score"]
-    stim_onset2 =  Data[nn, r]["stim_onset"]
-    stim_onset =  Data[nn, r]["stim_onset"]
-    # stim_onset= L_data[nn,1].T
-    # stim_onset = stim_onset[0,1:-1]
-    [T,p] = stats.ttest_1samp(np.abs(theta),0.05,axis = 1, alternative = 'greater') # set weight threshold here
-    p = p<0.05
-    Model_weight = np.multiply([np.mean(theta,1)*p],X4.T).T
-    maxC2 = np.max([np.abs(np.mean(theta,1))*p])+0.2
-    
-    
-    weight = {}
-    weight2 = {}
-    max_it = [key for key in Model_coef]
-    # max_it = np.setdiff1d(max_it,[8,9,10,11])
-    for a in max_it:
-        weight[a] = np.zeros((pre+post,np.size(stim_onset))) 
-        weight2[a] = np.zeros((pre+post,np.size(stim_onset),w_length[a]) )  
-                              
-    for st in np.arange(np.size(stim_onset)-1):
-        lag = 1
-        for a in max_it:
-            if stim_onset[st] <pre:
-                stim_onset[st] = pre+1
-            weight[a][:,st] = np.mean(Model_coef[a][stim_onset[st]-pre: stim_onset[st]+post,:],1)
-            weight2[a][:,st,:] = Model_weight[lag:lag+w_length[a],stim_onset[st]-pre: stim_onset[st]+post].T
-                
-            lag = lag+w_length[a]-1
+    # Xall,X,Y, L_all, stim_onset,x_start,x_end,t_start = build_GLM(D_ppc,n,window,sigma,Xp,r)
+    if nn in good_list_rule[r]:
+        Model_coef = Data[nn, r]["coef"]
+        theta = Data[nn,r]["theta"]
+        X4 = Data[nn,r]["X4"].toarray()
+        Model_score = Data[nn, r]["score"]
+        stim_onset2 =  Data[nn, r]["stim_onset"]
+        stim_onset =  Data[nn, r]["stim_onset"]
+        # stim_onset = extract_r_onset_times(D_ppc,nn,r)
+        # stim_onset= L_data[nn,1].T
+        # stim_onset = stim_onset[0,1:-1]
+        [T,p] = stats.ttest_1samp(np.abs(theta),0.05,axis = 1, alternative = 'greater') # set weight threshold here
+        p = p<0.05
+        Model_weight = np.multiply([np.mean(theta,1)*p],X4.T).T
+        Model_weight = Model_weight[1:,:]
+        maxC2 = np.max([np.abs(np.mean(theta,1))*p])+0.2
         
-    maxC = np.zeros((1,ax_sz))
-    # [T,p] = stats.ttest_1samp(Model_score,0.01,alternative = 'greater')
-    # if p < 0.05:
-    #     good_list5 = np.concatenate((good_list5,[nn]))
-    for a in max_it:    
-            maxC[0,a] = np.max(np.abs(np.mean(weight[a],1)))+0.2
-    for a in max_it:
-            Convdata[a][n,:] = np.mean(weight[a],1) /np.max(maxC)
-            # Convdata[a][n,:] = np.mean(weight[a],1) /(np.max(np.abs(np.mean(weight[a],1)))+0.2)
-            nz_ind = np.abs(np.sum(weight2[a],(0,2)))>0
-            if np.sum(nz_ind) > 0:
-                if a == 6:
-                    Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/(1*maxC2)
-                    # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/2
-                else:                       
-                    Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/maxC2
-                    # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)
+        
+        weight = {}
+        weight2 = {}
+        max_it = [key for key in Model_coef]
+        # max_it = np.setdiff1d(max_it,[8,9,10,11])
+        for a in max_it:
+            weight[a] = np.zeros((pre+post,np.size(stim_onset))) 
+            weight2[a] = np.zeros((pre+post,np.size(stim_onset),w_length[a]) )  
+                                  
+        for st in np.arange(np.size(stim_onset)-1):
+            lag = 0
+            for a in max_it:
+                if stim_onset[st] <pre:
+                    stim_onset[st] = pre+1
+                weight[a][:,st] = np.mean(Model_coef[a][stim_onset[st]-pre: stim_onset[st]+post,:],1)
+                weight2[a][:,st,:] = Model_weight[lag:lag+w_length[a],stim_onset[st]-pre: stim_onset[st]+post].T
+                    
+                lag = lag+w_length[a]
+            
+        maxC = np.zeros((1,ax_sz))
+        # [T,p] = stats.ttest_1samp(Model_score,0.01,alternative = 'greater')
+        # if p < 0.05:
+        #     good_list5 = np.concatenate((good_list5,[nn]))
+        for a in max_it:    
+                maxC[0,a] = np.max(np.abs(np.mean(weight[a],1)))+0.2
+        for a in max_it:
+                Convdata[a][n,:] = np.mean(weight[a],1) /np.max(maxC)
+                # Convdata[a][n,:] = np.mean(weight[a],1) /(np.max(np.abs(np.mean(weight[a],1)))+0.2)
+                nz_ind = np.abs(np.sum(weight2[a],(0,2)))>0
+                if np.sum(nz_ind) > 0:
+                    if a == 6:
+                        Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/(1*maxC2)
+                        # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/2
+                    else:                       
+                        Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/maxC2
+                        # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)
         
     
 # fig, axes = plt.subplots(1,1,figsize = (10,8))         
 # axes.plot(xaxis,np.mean(weight[7],1))
 # axes.plot(xaxis,np.mean(np.sum(weight2[a][:,nz_ind,:],1),1))
-     
+
+# adding Miss reward to Hit
+
+if r == 3:
+    Convdata[3] = Convdata[3] + Convdata[4]
+lstyles = ['solid','solid','dotted','solid','dotted','solid','solid','solid']
+
 fig, axes = plt.subplots(1,1,figsize = (10,8))       
 for a in np.arange(ax_sz):
     list0 = (np.mean(Convdata[a],1) != 0)
     error = np.std(Convdata[a],0)/np.sqrt(np.size(good_list_sep))
-    y = ndimage.gaussian_filter(np.mean(Convdata[a][list0,:],0),2)
+    y = ndimage.gaussian_filter(np.mean(Convdata[a][list0,:],0),0)
 
     # W = ndimage.gaussian_filter(np.mean(Convdata[a],0),2)   
     # W = ndimage.uniform_filter(np.sum(Convdata2[a][list0,:,:],2),[0,5], mode = "mirror")
-
+    # y = np.mean(W,0)
     # y = np.abs(np.mean(W,0))
-    # y = abs(y)
     # error = np.std(W,0)/np.sqrt(np.sqrt(np.sum(list0)))
     axes.plot(xaxis,y,c = cmap[a],linestyle = lstyles[a])
     axes.fill_between(xaxis,y-error,y+error,facecolor = cmap[a],alpha = 0.3)
     axes.set_ylim([-0.5,0.5])
     # axes.set_ylim([-0.1,1])
     
+# fig, axes = plt.subplots(1,1,figsize=(50,30))
+# axes.imshow(theta,cmap = 'bwr_r',clim = [-0.5,0.5], aspect='auto')    
     
-    
-# %% plotting weights by peak order
+Conv_all[r] = Convdata
+
+# % plotting weights by peak order
 
 # Convdata2 = Model_weight
-listOv = {}
 
-f = 1
-W5 = {}
+f = 3
 W5AC= {}
 W5IC = {}
 max_peak3 ={}
 tv_number = {}
-b_count = {}
 cmap = ['black','tab:blue','tab:blue','tab:red','tab:grey','tab:green','tab:orange']
-clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA"]
-lstyles = ['solid','solid','dotted','solid','dotted','solid','solid']
+clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA","Rew"]
+clabels2 = ['lick',"five","ten","hit","miss","cr","fa",'rew']
+lstyles = ['solid','solid','dotted','solid','dotted','solid','solid','solid']
 ax_sz = len(cmap)
-
+listOv1 = {}
+listOv2 = {}
 # w_length1 = [16,16,11,11,30,30,20,20]
 # w_length2 = [0,0,0,0,31,31,21,21]
-for r_ind in [1,2,3]: # 0 is PPCIC, 1 is PPCAC
-    b_count[r] = np.zeros((2,ax_sz))
-    for f in np.arange(ax_sz):
-            W5[r_ind,f] = {}
+
 
 for f in  np.arange(ax_sz):
         list0 = (np.mean(Convdata[f],1) != 0)
-        list0ind = good_list_rule[r]
-        # W = ndimage.uniform_filter(Convdata[f][list0,:],[0,0], mode = "mirror")
-        W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
+        # list0ind = good_list_rule[r][list0]
+        list0ind = good_list_sep[list0]
+        W = ndimage.uniform_filter(Convdata[f][list0,:],[0,0], mode = "mirror")
+        # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
         max_peak = np.argmax(np.abs(W),1)
         max_ind = max_peak.argsort()
         
@@ -944,7 +1052,8 @@ for f in  np.arange(ax_sz):
         max_peak3[r,f] = max_peak[list3]
         
         listOv[r,f] = list0ind[list3]
-        
+        listOv1[f] = list0ind[list1]
+        listOv2[f] = list0ind[list2]
         W1 = W[max_ind1]
         W2 = W[max_ind2]    
         W4 = np.abs(W[max_ind3])
@@ -958,36 +1067,93 @@ for f in  np.arange(ax_sz):
         # W3[:,68:] = 0
         W5[r,f][0] = W1
         W5[r,f][1] = W2
-        if f in [1]:
-            clim = [-1, 1]
-            fig, axes = plt.subplots(1,1,figsize = (10,10))
-            im1 = axes.imshow(W3[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "viridis")
-            # im2 = axes[1].imshow(W2, aspect = "auto", interpolation = "None")
-            # axes.set_xlim([,40])
-            fig.subplots_adjust(right=0.85)
-            cbar_ax = fig.add_axes([0.88, 0.15, 0.04, 0.7])
-            fig.colorbar(im1, cax=cbar_ax)
+        # if f in [3,6]:
+        #     clim = [-.5, .5]
+        #     fig, axes = plt.subplots(1,1,figsize = (10,10))
+        #     im1 = axes.imshow(W3[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "viridis")
+        #     # im2 = axes[1].imshow(W2, aspect = "auto", interpolation = "None")
+        #     # axes.set_xlim([,40])
+        #     fig.subplots_adjust(right=0.85)
+        #     cbar_ax = fig.add_axes([0.88, 0.15, 0.04, 0.7])
+        #     fig.colorbar(im1, cax=cbar_ax)
+
+
+# %%  overlap between RT miss and Hit
+ind = 3
+f1 = 3 
+f2 = 4
+list_overlap = np.intersect1d(listOv[ind,f1],listOv[ind,f2])
+
+list_miss = np.setdiff1d(listOv[3,4], list_overlap)
+
+ind2 = 2
+np.size(listOv[ind2,3])
+np.size(np.intersect1d(listOv[ind2,3],list_miss))
+np.size(np.intersect1d(listOv[ind2,3],listOv[3,3]))
+
+np.size(np.intersect1d(listOv[2,3],listOv[1,3]))
+
+test1 = np.intersect1d(listOv[1,3],listOv[3,3])
+test2 = np.intersect1d(listOv[2,3],listOv[3,3])
+np.size(np.intersect1d(test1,test2))
+
+
+
+conv_list = [];
+for n in list_overlap:
+    conv_list = np.append(conv_list,np.where(good_list_rule[ind] == n)[0])
+    
+W = ndimage.uniform_filter(Convdata[f2][conv_list.astype(int),:],[0,0], mode = "mirror")
+max_peak = np.argmax(np.abs(W),1)
+max_ind = max_peak.argsort()
+fig, axes = plt.subplots(1,1,figsize = (10,10))
+clim = [-.5, .5]
+im1 = axes.imshow(W[max_ind,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "viridis")
+     
+
+# %% Save encoding neuron list
+# savemat('D:\DATA\listTV3_IC_RT.mat',{clabels2[f]:listOv[r,f] for f in np.arange(ax_sz)})
+if r == 1:
+    rulename= '_R1'
+elif r == 2:
+    rulename= '_R2'
+else:
+    rulename= '_RT'
+savemat('D:\DATA\listTV3_'+region+rulename+'.mat',{clabels2[f]:listOv[r,f] for f in np.arange(ax_sz)})
+
+savemat('D:\DATA\listTV3_'+region+rulename+'p.mat',{clabels2[f]:listOv1[f] for f in np.arange(ax_sz)})
+savemat('D:\DATA\listTV3_'+region+rulename+'n.mat',{clabels2[f]:listOv2[f] for f in np.arange(ax_sz)})
 
 # %% calculate nb of neurons encodin
 
 # create list of all neurons that encode at least 1 variable
 ind = r
 test = [];
-for ind in [1,2,3]:
+for ind in [r]:
     for f in np.arange(ax_sz):
         test = np.concatenate((test,listOv[ind,f]))
 
 test_unique, counts = np.unique(test,return_counts= True)
 
-fig, axes = plt.subplots(1,1,figsize = (10,10))
+# fig, axes = plt.subplots(1,1,figsize = (10,10))
 
-sns.histplot(data = counts)
+# sns.histplot(data = counts)
+
+labels = np.arange(1,6)
+sizes = np.zeros((1,5))
+for l in labels:
+    sizes[0,l-1] = np.sum(counts == l) 
+
+sizes[0,4] = np.sum(counts > 4)
+
+# fig, axes = plt.subplots(1,1,figsize = (10,10))
+# axes.pie(sizes[0,:], labels=labels, autopct='%1.1f%%')
 
 # %% for each timebin, calculate the number of neurons encoding each TV
 
 cmap = ['black','tab:blue','tab:blue','tab:red','tab:grey','tab:green','tab:orange']
-clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA"]
-lstyles = ['solid','solid','dotted','solid','dotted','solid','solid']
+clabels = ['lick',"5kHz","10kHz","Hit","Miss","CR","FA","Rew"]
+lstyles = ['solid','solid','dotted','solid','dotted','solid','solid','solid']
 ax_sz = len(cmap)
 
 fig, axes = plt.subplots(1,1,figsize = (10,5))
@@ -995,19 +1161,22 @@ y_all = np.zeros((ax_sz,pre+post))
 p = 0 # positive vs negative
 for f in np.arange(ax_sz):
     list0 = (np.mean(Convdata[f],1) != 0)
-    W = ndimage.uniform_filter(Convdata[f][list0,:],[0,2], mode = "mirror")
-    W = Convdata[f][list0,:]
+    # W = ndimage.uniform_filter(Convdata[f][list0,:],[0,2], mode = "mirror")
+    # W = Convdata[f][list0,:]
+    W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
     SD = np.std(W[:,:])
     # test = np.abs(W5[ind,f][p])>1*SD
-    test = np.abs(W5[r,f][p])>2*SD
-    y = np.sum(test,0)/np.size(test_unique)
-
+    test = np.abs(W5[r,f][p])>1*SD
+    y = np.sum(test,0)/np.size(good_list_sep)
+    if r == 3:
+        if f == 4:
+            y = 0
         
     y_all[f,:] = y
     y = ndimage.uniform_filter(y,2, mode = "mirror")
     if p == 0:
         axes.plot(y,c = cmap[f], linestyle = lstyles[f], linewidth = 3, label = clabels[f] )
-        axes.set_ylim([0.01,.8])
+        axes.set_ylim([-0.01,.5])
         axes.legend()
     elif p == 1:
         axes.plot(-y,c = cmap[f], linestyle = lstyles[f], linewidth = 3 )
@@ -1022,23 +1191,477 @@ fig.subplots_adjust(hspace=0)
 
 # Transition
 
-Lic =57 #64
-Lg = 213-57 #182
+# Lic =57 #64
+# Lg = 213-57 #182
 # Lic = 110
 # Lg = 394-110
-b11 = b_count[r][0,:]/np.size(good_list_rule[r])
-b12 = b_count[r][1,:]/np.size(good_list_rule[r])
+b11 = b_count[r][0,:]/np.size(good_list_sep)
+b12 = b_count[r][1,:]/np.size(good_list_sep)
 
 
 # axes.grid(visible=True,axis = 'y')
 # axes[1].grid(visible=True,axis = 'y')
-axes.bar(np.arange(ax_sz)*3+1,b11+b12, color = 'white', edgecolor = cmap, alpha = 1, width = 0.5, linewidth = 2, hatch = '/')
+if r == 1:
+    axes.bar(np.arange(ax_sz)*3+1,b11+b12, color = 'white', edgecolor = cmap, alpha = 1, width = 0.5, linewidth = 2) #, hatch = '/')
+elif r ==2:
+    axes.bar(np.arange(ax_sz)*3+1,b11+b12, color = 'white', edgecolor = cmap, alpha = 1, width = 0.5, linewidth = 2, hatch = '/')
+else:
+    axes.bar(np.arange(ax_sz)*3+1,b11+b12, color = cmap, edgecolor = cmap, alpha = 1, width = 0.5, linewidth = 2) #, hatch = '/')
+        
 
-# axes[0].bar(np.arange(1)*2+0.7,b21, color = cmap3, alpha = 1, width = 0.5)
-# axes[0].bar(np.arange(4)*3+`1.4,b31, color = cmap3, alpha = 0.5, width = 0.5)
+
+# fname = 'D:/Python/Figures/fraction_'
+# # axes[0].bar(np.arange(1)*2+0.7,b21, color = cmap3, alpha = 1, width = 0.5)
+# # axes[0].bar(np.arange(4)*3+`1.4,b31, color = cmap3, alpha = 0.5, width = 0.5)
+# axes.set_ylim([0,1])
+# # axes.set_ylim([0,100])
+# plt.savefig(fname + region + 'r'+ str(r) + '.svg')
+        
+
+
+
+
+# %% plot positive and negative weights separately.
+# cmap = ['black','gray','tab:blue','tab:cyan','tab:red','tab:orange','black','green','tab:red','tab:orange','black','green',]
+
+pp = 0
+
+lstyles = ["","solid","dotted","dashed"]
+
+maxy = np.zeros((2,10))
+fig, axes = plt.subplots(2,ax_sz,figsize = (50,10),sharex = "all")
+fig.subplots_adjust(hspace=0)
+for p in [0,1]:
+    for f in np.arange(ax_sz):
+        if np.size(W5[r,f][p],0) >5:
+            y1 = ndimage.gaussian_filter1d(np.sum(W5[r,f][p],0),1)
+            y1 = y1/(np.size(W5[r,f][0],0)+np.size(W5[r,f][1],0))
+            e1 = np.std(W5[r,f][p],0)/np.sqrt((np.size(W5[r,f][0],0)+np.size(W5[r,f][1],0)))
+            axes[p,f].plot(xaxis,y1,c = cmap[f],linestyle = lstyles[r], linewidth = 3)
+            axes[p,f].fill_between(xaxis,y1-e1,y1+e1,facecolor = cmap[f],alpha = 0.3)
+            maxy[p,f] = np.max(np.abs(y1)+np.abs(e1))
+            maxy[p,f] = np.max([maxy[p,f],.5])
+        else:
+            for tr in np.arange(np.size(W5[r,f][p],0)):
+                y1 = ndimage.gaussian_filter1d((W5[r,f][p][tr,:]),1)
+                y1 = y1/(np.size(W5[r,f][0],0)+np.size(W5[r,f][1],0))
+                axes[p,f].plot(xaxis,y1,c = cmap[f],linestyle = lstyles[r], linewidth = 1)
+                maxy[p,f] = np.max(np.abs(y1)+np.abs(e1))
+                maxy[p,f] = np.max([maxy[p,f],.5])
+
+            # if np.size(W5[ind,f][p],0 > 4):
+            #     for t in np.arange(80):
+            #         if p == 0:
+            #             s1,p1 = stats.ttest_1samp(W5[ind,f][p][:,t],np.mean(e1),alternative = 'greater')
+            #         else:
+            #             s1,p1 = stats.ttest_1samp(W5[ind,f][p][:,t],-np.mean(e1),alternative= 'less')
+            #         if p1 < 0.05:
+            #             scat[0,t] = True
+            #             pcat[0,t] = p1
+            #     c1 = pcat[0,scat[0,:]>0]
+            #     if p == 0:
+            #         axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*maxy[p,f] + 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
+            #     elif p ==1:
+            #         axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*-maxy[p,f] - 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
+
+    
+    for f in np.arange(7):
+            axes[0,f].set_ylim([0, np.nanmax(maxy[:,f]+0.2)])
+            axes[1,f].set_ylim([-np.nanmax(maxy[:,f]+0.2),0])
+    
+
+
+
+
+
+# %% Ca trace for selected units
+# removing lick weights from Hit | Miss-Reward units
+
+r = 1
+n_list = np.unique(np.append(listOv[r,3],listOv[r,4]))
+
+
+def concat_Y(n_list,r):
+    
+    Y_all = {}
+    Y_all[0] = np.zeros((np.size(n_list),pre+post)) # 0 is hit, 1 is Miss-reward
+    Y_all[1] = np.zeros((np.size(n_list),pre+post))
+    # Y_all[2] = np.zeros((np.size(n_list),pre+post))
+    nc=0
+    for nn in n_list:
+        Model_coef = Data[nn, r]["coef"]
+        stim_onset =  Data[nn, r]["stim_onset"]
+        X = D_ppc[nn,3]
+        if r == 3:
+            X = X[200:260,:]
+        X[:,2] = X[:,3];
+        max_it = [key for key in Model_coef]
+        if 0 in max_it:
+            Y = Data[nn,r]["Y"] - np.mean(Model_coef[0],1)/2
+        else:
+            Y = Data[nn,r]["Y"]
+        for ind in [0,1]:
+            tempC = np.zeros((np.size(stim_onset[X[:,ind]==1]),(pre+post)))
+            sc = 0
+            for st in stim_onset[X[:,ind]==1]:
+                tempC[sc,:] = Y[st-pre:st+post]
+                sc += 1
+            Y_all[ind][nc,:] = np.nanmean(tempC,0)/(max(Y)+.5)
+        nc += 1
+    return Y_all
+            
+        
+Y_all = concat_Y(n_list,r)
+
+cmap2 = ['tab:red','tab:purple','tab:orange']
+
+fig, axes = plt.subplots(1,1,figsize = (10,5))
+for ind in [0,1]:
+    y = np.nanmean(Y_all[ind],0)
+    e = np.nanstd(Y_all[ind],0)/np.sqrt(np.size(Y_all[ind],0))
+    axes.plot(xaxis,y,color = cmap2[ind])
+    axes.fill_between(xaxis,y-e,y+e,facecolor = cmap2[ind],alpha = 0.3)
+
+fig,axes = plt.subplots(1,2,figsize = (10,5))
+for ind in [0,1]:
+    max_peak = np.argmax(np.abs(Y_all[1]),1)
+    max_ind = max_peak.argsort()
+    im1 = axes[ind].imshow(Y_all[ind][max_ind,:],clim = [-0.4,0.4], aspect = "auto", interpolation = "None",cmap = "viridis")
+
+
+# %% helper functions for PCA and subspace overlap
+
+def subspace_overlap(W4,n_cv,t1,t2,ntv):
+    R = {}
+    pca = {}
+    for g in  np.arange(ntv):
+        pca[g] = PCA(n_components=max_k)
+        R[g] = W4[g][:,t1:t2].T
+        test = pca[g].fit_transform(ndimage.gaussian_filter(R[g],[sm,0]))        
+        test = test.T
+    Overlap = np.zeros((len(W4),len(W4),n_cv)); # PPC_IC
+    # Overlap_across = np.zeros((trmax,trmax,n_cv));
+    total_n = np.size(W4[0],0)
+    
+    k1 = n_cv
+    
+    for cv in np.arange(n_cv):
+        n_list = np.random.choice(np.arange(total_n),int(np.floor(total_n*0.75)),replace = False)    
+        for g in  np.arange(len(W4)):
+            pca[g] = PCA(n_components=k1)
+            test = pca[g].fit_transform(ndimage.gaussian_filter(R[g][:,n_list],[1,0]))  
+            
+        
+        for g1 in np.arange(len(W4)): #np.arange(trmax):
+           for g2 in np.arange(len(W4)): # np.arange(trmax):
+               S_value = np.zeros((1,k1))
+               for d in np.arange(0,k1):
+                   S_value[0,d] = np.abs(np.dot(pca[g1].components_[d,:], pca[g2].components_[d,:].T))
+                   S_value[0,d] = S_value[0,d]/(np.linalg.norm(pca[g1].components_[d,:])*np.linalg.norm(pca[g2].components_[d,:]))
+               Overlap[g1,g2,cv] = np.max(S_value)
+    return Overlap
+
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from matplotlib import cm
+
+
+def draw_traj5(traj,v,ntv):
+    fig = plt.figure(figsize = (10,10))
+    ax = plt.axes(projection='3d')
+    # styles = ['solid', 'dotted', 'solid','dotted']
+    # cmap_names = ['autumn','autumn','winter','winter']
+    styles = ['solid','solid','solid','dotted','solid','dotted','dashed','dashed']
+    cmap_names = ['autumn','winter','winter']
+    for ind in np.arange(ntv): # np.arange(trmax):
+            x = traj[ind][:,0]
+            y = traj[ind][:,1]
+            z = traj[ind][:,2]
+            
+            x = ndimage.gaussian_filter(x,1)
+            y = ndimage.gaussian_filter(y,1)
+            z = ndimage.gaussian_filter(z,1)            
+                
+            time = np.arange(len(x))
+            points = np.array([x, y, z]).T.reshape(-1, 1, 3)
+            segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        
+            if ind == 0:
+                colors = cm.autumn(np.linspace(0,1,160))
+                ax.auto_scale_xyz(x,y,z)
+            elif ind == 2:
+                colors = cm.winter(np.linspace(0,1,160))
+                # ax.auto_scale_xyz(x,y,z)
+            else:
+                colors = cm.gray(np.linspace(0,1,160))
+                # ax.set_ylim([-5,5])
+            
+
+            lc = Line3DCollection(segments, color = colors,alpha = 1,linestyle = styles[ind])#linestyle = styles[tr])
+    
+            lc.set_array(time)
+            lc.set_linewidth(2)
+            ax.add_collection3d(lc)
+            ax.set_xlabel('PC1')
+            ax.set_ylabel('PC2')
+            ax.set_zlabel('PC3')
+            
+            
+            for m in [0]:
+                ax.scatter(x[m], y[m], z[m], marker='o', color = "black")
+
+# %% subspace overlap
+
+pca = {}
+max_k = 20;
+sm = 5
+t1 = 60
+t2 = 160
+
+# O = subspace_overlap(Y_all,max_k,t1,t2)
+
+def make_traj():
+    R = np.concatenate((Y_all[0],Y_all[1]),1)
+    # R = np.concatenate((R,Y_all[2]),1)
+    traj ={}
+    pca = PCA(n_components=max_k)
+    test = pca.fit_transform(ndimage.gaussian_filter(R[:,:].T,[1,0])) 
+    # test =test
+    for ind in [0,1]:
+        traj[ind] = ndimage.gaussian_filter(test[ind*160:(ind+1)*160,:],[sm,0])
+        traj[ind] = traj[ind]- np.mean(traj[ind][10:30,:],0)
+    return traj
+
+
+traj = make_traj()
+draw_traj5(traj,1,2)
+
+distance = {}
+for ind in [0,1]:
+    distance[ind] = np.linalg.norm(traj[ind][:,0:3],axis = 1)# np.sqrt(traj[ind][0,:]**2+traj[ind][1,:]**2+traj[ind][2,:]**2)
+
+fig, axes = plt.subplots(figsize = (5,5))
+axes.plot(distance[0],color ='tab:red' )
+axes.plot(distance[1],color ='black')
+
+# %% rastermap for W2
+from rastermap import Rastermap, utils
+from scipy.stats import zscore
+
+    # W3[ind] = W2[ind][listind[0],:],[0,3],mode = "mirror")
+                             
+# W3[2] = (W3[2] + W3[3])/2
+# W3[0] = W3[1]
+ind =1
+# fit rastermap
+# note that D_r is already normalized
+model = Rastermap(n_PCs=64,
+                  locality=.75,
+                  time_lag_window=7,
+                  n_clusters = 10,
+                  grid_upsample=1, keep_norm_X = False).fit(Y_all[ind])
+y = model.embedding # neurons x 1
+isort = model.isort
+
+# bin over neurons
+# X_embedding = zscore(utils.bin1d(spks[isort], bin_size=25, axis=0), axis=1)
+
+for ind in [0,1]:
+    fig, ax = plt.subplots(figsize = (5,5))
+    ax.imshow(zscore(Y_all[ind][isort, :],axis = 1), cmap="gray_r", vmin=0.5, vmax=1.2,aspect = "auto")
+    ax.set(xticks=np.arange(0, pre+post, 20), xticklabels=np.arange(-pre/20, post/20, 1));
+
+
+# %% subspace overlap using model weights
+
+W_h = {}
+pca = {}
+max_k = 20;
+sm = 5
+# list_hit = np.unique(np.concatenate((listOv[1,3],listOv[3,3],listOv[2,3])))
+
+# for ind in [0,1,2]:
+#     W_h[ind] = np.zeros((np.size(list_hit),pre+post))
+#     c = 0
+#     for n in listOv[ind+1,3]:
+#         nn = np.where(list_hit == listOv[ind+1,3][n])[0][0]
+#         W_h[ind][nn,:] = W5[ind+1,3][c,:]
+#         c += 1
+        
+
+
+f1 = 0
+f2 = 3
+f3 = 6
+f4 = 0
+
+W_h[0] = Conv_all[1][f1]
+W_h[1] = Conv_all[3][f1]
+W_h[2] = Conv_all[2][f1]
+
+W_h[3] = Conv_all[1][f2]
+W_h[4] = Conv_all[3][f2]
+W_h[5] = Conv_all[2][f2]
+
+# W_h[6] = Conv_all[1][f3]
+# W_h[7] = Conv_all[3][f3]
+# W_h[8] = Conv_all[2][f3]
+
+# W_h[9] = Conv_all[1][f4]
+# W_h[10] = Conv_all[3][f4]
+# W_h[11] = Conv_all[2][f4]
+lstyles = ["","solid","dotted","dashed"]
+
+fig, axes = plt.subplots(figsize = (10,5))
+for ind in [0,1,2]:
+    y = np.mean(W_h[ind][np.sum(W_h[ind],1)>-10,:],0)
+    e = np.std(W_h[ind][np.sum(W_h[ind],1)>-10,:],0)/np.sqrt(len(np.sum(W_h[ind],1)>-10))
+    axes.plot(xaxis,y,c = cmap[f1],linestyle = lstyles[ind+1])
+    axes.fill_between(xaxis,y-e,y+e,facecolor = cmap[f1],alpha = 0.3)
+    axes.set_ylim([-0.01,0.5])
+fig, axes = plt.subplots(figsize = (10,5))
+for ind in [3,4,5]:
+    y = np.mean(W_h[ind][np.sum(W_h[ind],1)>-10,:],0)
+    e = np.std(W_h[ind][np.sum(W_h[ind],1)>-10,:],0)/np.sqrt(len(np.sum(W_h[ind],1)>-10))
+    axes.plot(xaxis,y,c = cmap[f2],linestyle = lstyles[ind-2])
+    axes.fill_between(xaxis,y-e,y+e,facecolor = cmap[f2],alpha = 0.3)
+    axes.set_ylim([-0.05,0.3])
+
+O2 = subspace_overlap(W_h, 20, 0, 160,len(W_h))
+
+fig, axes = plt.subplots(figsize = (5,5))
+imshowobj = axes.imshow(np.mean(O2[:,:,:],2),cmap = "hot_r")
+imshowobj.set_clim(0.2, 0.9) #correct
+plt.colorbar(imshowobj) #adjusts scale to value range, looks OK
+
+# savemat('D:\DATA\subspace_'+region+'.mat',{'lick1':O2[0,1,:],'lick2':O2[0,2,:],'lick3':O2[1,2,:],'hit1':O2[3,4,:],'hit2':O2[3,5,:],'hit3':O2[4,5,:]})
+
+
+
+def make_traj2(ntv):
+    # R = np.concatenate((W_h[3],W_h[4],W_h[5]),1)
+    R = np.concatenate((W_h[0],W_h[1],W_h[2]),1)
+    # R = np.concatenate((R,Y_all[2]),1)
+    traj ={}
+    pca = PCA(n_components=max_k)
+    test = pca.fit_transform(ndimage.gaussian_filter(R[:,:].T,[1,0])) 
+    expvar = pca.explained_variance_ratio_
+    # test =test
+    for ind in np.arange(ntv):
+        traj[ind] = ndimage.gaussian_filter(test[ind*160:(ind+1)*160,:],[sm,0])
+        traj[ind] = traj[ind]- np.mean(traj[ind][10:20,:],0)
+    return traj, expvar
+
+
+traj,expvar = make_traj2(5)
+draw_traj5(traj,1,3)
+
+
+# fig, axes = plt.subplots(1,1)
+# for rr in [0,1,2]:
+#     axes.plot(traj[rr][:,0])
+
+# %%
+
+
+
+
+
+
+
+
+
+
+for f in [0,3,5,6]:
+    fig, axes= plt.subplots(2,1,figsize =(10,10))
+    for ind in [0,1]:
+        for rr in [1,2,3]:
+            y = np.sum(W5[rr,f][ind],0)/(np.size(W5[rr,f][0],0)+np.size(W5[rr,f][1],0))
+            e = np.std(W5[rr,f][ind],0)/np.sqrt((np.size(W5[rr,f][0],0)+np.size(W5[rr,f][1],0)))
+            axes[ind].plot(xaxis,y,c = cmap[f],linestyle = lstyles[rr])
+            axes[ind].fill_between(xaxis,y-e,y+e,facecolor = cmap[f],alpha = 0.3)
+            
+            if ind ==1:
+                axes[ind].set_ylim(-0.2,0.02)
+            else:
+                axes[ind].set_ylim(-0.02,0.25)
+
+
+# %% how many units are pre-lick? run after everything
+
+# r = 1
+
+def ana_lick_theta(r):
+    list_lick = np.array([])
+    for r2 in [1,2,3]:
+        for n in np.arange(np.size(good_list_sep,0)):
+            nn = int(good_list_sep[n])
+            # Xall,X,Y, L_all, stim_onset,x_start,x_end,t_start = build_GLM(D_ppc,n,window,sigma,Xp,r)
+            if nn in good_list_rule[r2]:
+                Model_coef = Data[nn, r2]["coef"]
+                theta = Data[nn,r2]["theta"]
+            
+                if 0 in [key for key in Model_coef]:
+                    list_lick = np.append(list_lick,nn)
+    list_lick = np.unique(list_lick)
+    mat_theta = np.zeros((7,np.size(list_lick)))
+    mat_stat =  np.zeros((7,np.size(list_lick)))
+    pn = 0
+    for n in list_lick:
+        nn = int(n)
+        if nn in good_list_rule[r]:
+            Model_coef = Data[nn, r]["coef"]
+            theta = Data[nn,r]["theta"]
+            test = np.flip(theta[1:5,:],0)
+            test2 =  theta[6:9,:] 
+            theta_lick = np.flip(np.concatenate((test,test2),0),0)
+            mat_theta[:,pn] = np.mean(theta_lick,1)
+            for t in np.arange(7):
+                [T,p] = stats.ttest_1samp(np.abs(theta_lick[t,:]),np.std(theta[:,:]),alternative = 'greater')
+                if p < 0.05:
+                    mat_stat[t,pn] =1
+        pn += 1
+    return mat_stat, mat_theta, list_lick
+
+mat_stat = {}
+mat_theta = {}
+for r in [1,2,3]:
+    mat_stat[r],mat_theta[r], list_lick = ana_lick_theta(r)
+    # mat_stat[r][10:-1,:] = mat_stat[r][11:,:]
+    # mat_stat[r] = mat_stat[r][:-1,:]
+
+
+l_xaxis = np.arange(-200,150,50)
+fig, axes = plt.subplots(figsize = (10,5))
+for r in [1,2,3]:
+    y = np.mean(mat_stat[r],1)
+    e = np.std(mat_stat[r],1)/np.sqrt(np.size(mat_stat[r],1))
+    axes.plot(l_xaxis,y,linestyle = lstyles[r])
+    axes.fill_between(l_xaxis,y-e,y+e,alpha = 0.3)
+    axes.set_ylim([0,1])
+
+mat_stat[4] = (mat_stat[1] + mat_stat[2] + mat_stat[3])/3
+
+fig, axes = plt.subplots(figsize = (10,5))
+y = np.mean(mat_stat[4],1)
+e = np.std(mat_stat[4],1)/np.sqrt(np.size(mat_stat[4],1))
+axes.plot(l_xaxis,y)
+axes.fill_between(l_xaxis,y-e,y+e,alpha = 0.3)
+axes.set_ylim([0,1])
+
 axes.set_ylim([0,1])
 # axes.set_ylim([0,100])
+# fname = 'D:/Python/Figures/lick_theta2_'
+# plt.savefig(fname + region + '.svg')
         
+
+
+# test = np.mean(mat_stat,1)
+
+
+# fig, axes = plt.subplots(1,1)
+# axes.plot(np.mean(np.concatenate((mat_theta[0:10,:],mat_theta[11:-1,:])),1))
+# %% Lick encoding, pre vs post
+
 
 # %% finding alpha value, GLM part
 

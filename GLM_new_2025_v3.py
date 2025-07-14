@@ -1,22 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 12 15:45:07 2025
+Created on Fri Jun 20 13:48:16 2025
 
 GLM analysis, without segmenting data by trial onset time. 
 
-Matlab .mat file format
-Variable name: GLM_CaData (N x 7 cell matrix)
-Currently the data format is the following:
-    1. Ca trace data (sampling rate unadjusted)
-    2. Lick times (s)
-    3. trial information
-        1. onset  time
-        2~7. Go, Lick, Reward, Correct, stim
-    4. sample time (s)
-    5. TTR
-    6. Reward time (s)
-    
-    
 
 @author: Jong Hoon Lee
 """
@@ -26,7 +13,7 @@ Currently the data format is the following:
 import numpy as np
 
 import matplotlib.pyplot as plt
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 from scipy import ndimage
 from scipy import stats
 from sklearn.linear_model import TweedieRegressor, Ridge, ElasticNet,ElasticNetCV
@@ -38,18 +25,55 @@ from os.path import join as pjoin
 from numba import jit, cuda
 
 from scipy.stats import zscore
-# %% File name and directory, load mat file helper function
+
+# %% File name and directory
 
 # change fname for filename
+# fname = 'CaData_all_all_session_v2_corrected.mat'
 fname = 'CaData_all_session_v3_corrected.mat'
 
 fdir = 'D:\Python\Data'
+
+
+# %% Helper functions for loading and selecting data
+np.seterr(divide = 'ignore') 
+def load_matfile(dataname = pjoin(fdir,fname)):
+    
+    MATfile = loadmat(dataname)
+    D_ppc = MATfile['GLM_dataset']
+    return D_ppc 
 
 def load_matfile_Ca(dataname = pjoin(fdir,fname)):
     
     MATfile = loadmat(dataname)
     D_ppc = MATfile['GLM_CaData']
     return D_ppc 
+
+def find_good_data_Ca(t_period):
+    D_ppc = load_matfile_Ca()
+    good_list = []
+    t_period = t_period+prestim
+
+    for n in range(np.size(D_ppc,0)):
+        N_trial = np.size(D_ppc[n,2],0)
+    
+        ttr = D_ppc[n,4][0][0]
+
+    # re-formatting Ca traces
+    
+        Y = np.zeros((N_trial,int(t_period/window)))
+        for tr in range(N_trial):
+            Y[tr,:] = D_ppc[n,0][0,int(D_ppc[n,2][tr,0])-1 
+                                 - int(prestim/window): int(D_ppc[n,2][tr,0])
+                                 + int(t_period/window)-1 - int(prestim/window)]
+        if np.mean(Y[:200,:]) > 0.5 :
+            good_list = np.concatenate((good_list,[n]))
+        elif np.mean(Y[200:ttr+26,:]) > 0.5:
+            good_list = np.concatenate((good_list,[n]))
+        elif np.mean(Y[ttr+26:N_trial,:])> 0.5 :
+            good_list = np.concatenate((good_list,[n]))
+    
+    return good_list
 
 
 # %% import data helper functions
@@ -60,9 +84,17 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     # Reward is defined by first lick during reward presentation
     # Lick onset, offset are defined by lick times
     # Hit vs FA are defined by trial conditions
+    
+    
 
     N_trial = np.size(D_ppc[n,2],0)
+    
+    # extracting licks, the same way
+    
 
+    
+    
+    
     ### Extract Ca trace ###
     Yraw = {}
     Yraw = D_ppc[n,0]
@@ -98,7 +130,11 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     
     for l in np.floor(Ln[lick_offset,0]*(1e3/window)):
         L_all_offset[0,int(l)-1] = 1 
-            
+     
+    L_all_mid = L_all-L_all_onset-L_all_offset
+    L_all_mid[0,L_all_mid[0,:]<0] = 0
+    # for l in np.floor(D_ppc[n,6][:,0]*(1e3/window)):
+    #     Rt[0,int(l)-1] = 1     
     
     ### Extract Lick End ###
     
@@ -121,19 +157,20 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     ED2 = 10
     stim_dur = 5 # 500ms stim duration
     delay = 10 # 1 second delay
-    r_dur = 5 # 0.5 second reward duration (was 10) 
-    ED3 = 30 # 3 seconds post reward lag
+    r_dur = 5 # 2 second reward duration (was 10) 
+    ED3 = 30 # 4 seconds post reward lag
     ED4 = 70
     ED5 = 50
-    ED_hist1 = 50 # 5 seconds pre-stim next trial
+    ED_hist1 = 50 # 4 seconds pre-stim next trial
     ED_hist2 = 15 # 1.5 seconds post-stim next trial
     h_dur = 5
     
     X3_Lick_onset = np.zeros((ED1+ED2+1,np.size(Y,1)))
     X3_Lick_offset = np.zeros_like(X3_Lick_onset)
-    
+    X3_Lick_mid = np.zeros_like(X3_Lick_onset)
     X3_Lick_onset[0,:] = L_all_onset
     X3_Lick_offset[0,:] = L_all_offset
+    
 
     for lag in np.arange(ED1):
         X3_Lick_onset[lag+1,:-lag-1] = L_all_onset[0,lag+1:]
@@ -163,6 +200,19 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     X3_Miss = np.zeros_like(X3_Hit)
     X3_CR = np.zeros_like(X3_Hit)
     
+    # X3_Miss = np.zeros((ED3+1,np.size(Y,1)))
+    # X3_CR = np.zeros_like(X3_Miss)
+    # for r in Rt[(XHit == 1)]:
+    #     if r != 0:
+    #         X3_Hit[0,r:r+r_dur] = 1
+    
+    # for r in Rt[(XFA == 1)]:
+    #     if r != 0:
+    #         X3_FA[0,r:r+r_dur] = 1
+    # for r in Rt[(XHit == 1)]:
+    #     if r != 0:
+    #         r = r-10
+    #         X3_Hit[0,r:r+r_dur] = 1
     
        
     for st in stim_onset[(XHit==1)]:
@@ -187,6 +237,37 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
         X3_Hit[lag+1,lag+1:] = X3_Hit[0,:-lag-1]
         X3_FA[lag+1,lag+1:] = X3_FA[0,:-lag-1]
 
+    # X3_Hit_hist = np.zeros((ED_hist1+ED_hist2+1,np.size(Y,1)))
+    # X3_FA_hist = np.zeros((ED_hist1+ED_hist2+1,np.size(Y,1)))
+    
+    # X3_Hit_hist = np.zeros((ED_hist1+1,np.size(Y,1)))
+    # X3_FA_hist = np.zeros((ED_hist1++1,np.size(Y,1)))
+    # XHit_prev = np.concatenate(([False], XHit[0:-1]), axis = 0)
+    # XFA_prev = np.concatenate(([False], XFA[0:-1]), axis = 0)
+    
+    
+    # X3_Hit_hist[0,30:] = X3_Hit[0,:-30]
+    # X3_FA_hist[0,30:] = X3_FA[0,:-30]
+    
+    # for lag in np.arange(ED_hist1):
+    #     X3_Hit_hist[lag+1,lag+1:] = X3_Hit_hist[0,:-lag-1]
+    #     X3_FA_hist[lag+1,lag+1:] = X3_FA_hist[0,:-lag-1]
+    # for st in stim_onset[(XHit_prev ==1)]:
+    #     X3_Hit_hist[0,st:st+h_dur] = 1
+    # for st in stim_onset[(XFA_prev ==1)]:
+    #     X3_FA_hist[0,st:st+h_dur] = 1 
+    
+    
+    # for lag in np.arange(ED_hist1):
+    #     X3_Hit_hist[lag+1,:-lag-1] = X3_Hit_hist[0,lag+1:]
+    #     X3_FA_hist[lag+1,:-lag-1] = X3_FA_hist[0,lag+1:]
+    
+    # for lag in np.arange(ED_hist2):
+    #     X3_Hit_hist[lag+ED_hist1+1,lag+1:] = X3_Hit_hist[0,:-lag-1]
+    #     X3_FA_hist[lag+ED_hist1+1,lag+1:] = X3_FA_hist[0,:-lag-1]
+    
+    # for r in Rt[()]
+    # gather X variables
     
     
     X3 = {}
@@ -194,6 +275,14 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     X3[1] = X3_Lick_offset
     X3[2] = X3_go
     X3[3] = X3_ng
+    # X3[4] = X3_Hit[0:int(ED4/2),:]
+    # X3[5] = X3_FA[0:int(ED4/2),:]
+    # X3[6] = X3_Miss[0:int(ED4/2)-10,:]
+    # X3[7] = X3_CR[0:int(ED4/2)-10,:]
+    # X3[8] = X3_Hit[int(ED4/2):,:]
+    # X3[9] = X3_FA[int(ED4/2):,:]
+    # X3[10] = X3_Miss[int(ED4/2)-10:,:]
+    # X3[11] = X3_CR[int(ED4/2)-10:,:]
     X3[4] = X3_Hit[0:10,:]
     X3[5] = X3_FA[0:10,:]
     X3[6] = X3_Miss[0:10,:]
@@ -202,7 +291,11 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
     X3[9] = X3_FA[10:,:]
     X3[10] = X3_Miss[10:,:]
     X3[11] = X3_CR[10:,:]
-
+    
+    
+    # X3[8] = X3_Hit_hist
+    # X3[9] = X3_FA_hist
+    
     if c_ind == 1:
         c1 = stim_onset[1]-100
         c2 = stim_onset[151]
@@ -246,7 +339,6 @@ def import_data_w_Ca(D_ppc,n,window,c_ind):
 
     return X3,Y, L_all,L_all_onset, L_all_offset, stim_onset2, r_onset, Xstim,Y0
 
-
 # %% glm_per_neuron function code
 def glm_per_neuron(n,c_ind, fig_on,good_alpha):
     X, Y, Lm, L_on, L_off, stim_onset, r_onset, Xstim, Y0 = import_data_w_Ca(D_ppc,n,window,c_ind)
@@ -258,6 +350,7 @@ def glm_per_neuron(n,c_ind, fig_on,good_alpha):
     l_ratio = 0.9
     alpha_score = np.zeros((len(alpha_list),1))
     aa = 0
+    
     
     ### Iteration to find good alpha
     ### for run time purposes, run this code once with input good_alpha = 5*1e-2
@@ -617,6 +710,10 @@ def glm_per_neuron(n,c_ind, fig_on,good_alpha):
     return Xstim, L_on, inter, TT, Y, max_it, score3, init_compare_score, yhat,X4, theta, good_alpha
 
 
+
+    
+    
+    
 # %% Initialize
 """     
 Each column of X contains the following information:
@@ -643,10 +740,16 @@ c_list = [3]
 
 
 
-D_ppc = load_matfile_Ca()
-   
-# once the code is run for the first time to select alpha, save the alpha list. load the list as shown below for future runs
-# list_a = np.load('list_alpha.npy',allow_pickle= True).item()
+if ca ==0:
+    D_ppc = load_matfile()
+    # good_list = find_good_data()
+else:
+    D_ppc = load_matfile_Ca()
+    good_list = find_good_data_Ca(t_period)
+    
+list_a = np.load('list_alpha.npy',allow_pickle= True).item()
+    
+    
 # %% Run GLM
 
 Data = {}
@@ -656,12 +759,12 @@ Data = {}
 for c_ind in c_list:
     # t = 0 
     good_list2 = [];
-    for n in np.arange(np.size(D_ppc,0)):
+    for n in good_list: #np.arange(np.size(D_ppc,0)):
         
         n = int(n)
         if D_ppc[n,4][0][0] > 0:
             try:
-                Xstim, L_on, inter, TT, Y, max_it, score3, init_score, yhat, X4, theta,g_alpha  = glm_per_neuron(n,c_ind,1,5e-2)
+                Xstim, L_on, inter, TT, Y, max_it, score3, init_score, yhat, X4, theta,g_alpha  = glm_per_neuron(n,c_ind,1,list_a[n])
                 Data[n,c_ind-1] = {"X":Xstim,"coef" : TT, "score" : score3, 'Y' : Y,'init_score' : init_score,
                                     "intercept" : inter,'L' : L_on,"yhat" : yhat, "X4" : X4, "theta": theta,"alpha":g_alpha}
                 good_list2 = np.concatenate((good_list2,[n]))
@@ -673,10 +776,9 @@ for c_ind in c_list:
             except:
             
                 print("Break, no fit") 
+# np.save('RTnew_0620.npy', Data,allow_pickle= True)  
 
-### After running this section, save the Data variable
-# np.save('RTnew_1211.npy', Data,allow_pickle= True)  
-### load Data from saved file   
+# load Data from saved file   
 Data = np.load('RTnew_1211.npy',allow_pickle= True).item()
 test = list(Data.keys())
 c_ind = c_list[0]
@@ -684,6 +786,23 @@ good_list2 = np.zeros((len(test)))
 for n in np.arange(len(test)):
     good_list2[n] =test[n][0]
     
+    
+
+# list_alpha = {}
+# for n in good_list2:
+#     list_alpha[n] = Data[n,c_ind-1]["alpha"]
+    
+# np.save('list_alpha.npy',list_alpha,allow_pickle= True)  
+
+# list_a = np.load('list_alpha.npy',allow_pickle= True).item()
+# load data end
+
+# test = Data2.item()
+
+
+
+
+# test1 =test(7,2)
 # %% plot R score 
 
 
@@ -708,7 +827,7 @@ def make_RS(d_list):
         init_score =  Data[nn, c_ind-1]["init_score"]
         for a in np.arange(ax_sz):
             I[n,a] = np.mean(init_score[a])
-        I[n,ax_sz] = np.mean(Model_score)
+        I[n,ax_sz] = np.mean(Model_score)*1.
         
     
     fig, axes = plt.subplots(1,1, figsize = (10,8))
@@ -734,8 +853,8 @@ def make_RS(d_list):
 
 I1 = make_RS(d_list3)
 I2 = make_RS(d_list)
-I1 = I1[:,8]*1.5
-I2 = I2[:,8]*1.5
+I1 = I1[:,8]*1.
+I2 = I2[:,8]*1.
 bins = np.arange(0,0.8, 0.01)
 fig, axs= plt.subplots(1,1,figsize = (5,5))
 axs.hist(I1[I1>0.01],bins = bins,density=True, histtype="step",
@@ -752,11 +871,54 @@ for n in np.arange(np.size(good_list2,0)):
     if np.mean(Model_score) > 0.02:
         good_listRu = np.concatenate((good_listRu,[nn]))
 
-        
-### removing units with less than 2TTR
-# good_listRu = np.setdiff1d(good_listRu,[49,44,87,59,63])
-# good_listRu = np.setdiff1d(good_listRu,np.arange(117,130))
 
+# Data3 = np.load('RTnew_1121.npy',allow_pickle= True).item()
+# listN = np.load('listBN.npy',allow_pickle= True)
+# listN = listN.astype('int64')
+# for n in listN:
+#     # if n not in good_listRu:
+#         Data[n,c_ind-1] = Data3[n,c_ind-1]
+        
+
+# del Data3
+
+# removing units with less than 2TTR
+# good_listRu = np.setdiff1d(good_listRu,[49,44,87,59,63])
+
+good_listRu = np.setdiff1d(good_listRu,np.arange(117,130))
+
+
+# %% histogram of TV encoding
+cmap = ['black','gray','tab:blue','tab:cyan','tab:red','tab:orange','tab:purple','green']
+edgec = cmap
+# edgec = ['tab:orange','tab:orange','tab:blue','tab:blue','tab:red','tab:red','black','green','tab:purple','tab:purple']
+
+
+d_list2 = d_list
+def TV_hist(d_list2):
+    good_list_sep = good_list2[d_list2]
+    TV = np.empty([1,1])
+    for n in np.arange(np.size(good_list_sep,0)):
+            nn = int(good_list_sep[n])
+            Model_coef = Data[nn, c_ind-1]["coef"]
+            max_it = [key for key in Model_coef]
+            TV = np.append(TV, max_it)
+    
+    TV = TV[1:]
+    ax_sz = 12
+    B = np.zeros((1,ax_sz))
+    for f in np.arange(ax_sz):
+        B[0,f] = np.sum(TV == f)
+        
+    B = B/np.sum(d_list2)
+    fig, axes = plt.subplots(1,1, figsize = (15,5))
+    axes.grid(visible=True,axis = 'y')
+    axes.bar(np.arange(ax_sz)*3,B[0,:], color = "white", edgecolor = edgec, alpha = 1, width = 0.5, linewidth = 2,hatch = '/')
+    # axes.bar(np.arange(ax_sz)*3,B[0,:], color = cmap, edgecolor = edgec, alpha = 1, width = 0.5, linewidth = 2,hatch = '/')
+    axes.set_ylim([0,0.8])
+            
+TV_hist(d_list2)
+        
 # %% 
 
 
@@ -810,13 +972,19 @@ for n in np.arange(np.size(good_list2,0)):
 # %% Normalized population average of task variable weights
 # c_ind = 1
 d_list = good_listRu > 195
+# d_list3 = good_list <= 179
 d_list3 = good_listRu <= 195
 
+# Lic = np.where(good_listRu <180)`
+# Lic = Lic[0][-1]
 good_list_sep = good_listRu[:]
+
+# good_list_sep = good_list2[d_list]
 
 weight_thresh = 5*1e-2
 
 
+# fig, ((ax1, ax2),(ax3,ax4)) = plt.subplots(2,2,figsize=(10, 10))        
 cmap = ['tab:orange','tab:orange','tab:blue','tab:blue','tab:red','tab:red','black','green']
 cmap = ['black','gray','tab:blue','tab:cyan','tab:red','tab:orange','tab:purple','green']
 
@@ -830,8 +998,8 @@ w_length = [16,16,11,11,71,71,71,71] # window lengths for GLM
 
 Convdata = {}
 Convdata2 = {}
-pre = 25 # 10 40 
-post = 55 # 50 20
+pre = 10 # 10 40 
+post = 70 # 50 20
 xaxis = np.arange(post+pre)- pre
 xaxis = xaxis*1e-1
 
@@ -849,7 +1017,7 @@ for n in np.arange(np.size(good_list_sep,0)):
     X4 = Data[nn,c_ind-1]["X4"]
     Model_score = Data[nn, c_ind-1]["score"]
     stim_onset2 =  Data[nn, c_ind-1]["stim_onset"]
-    stim_onset =  Data[nn, c_ind-1]["r_onset"]
+    stim_onset =  Data[nn, c_ind-1]["stim_onset"]
     # stim_onset= L_data[nn,1].T
     # stim_onset = stim_onset[0,1:-1]
     [T,p] = stats.ttest_1samp(np.abs(theta),0.05,axis = 1, alternative = 'greater') # set weight threshold here
@@ -889,21 +1057,19 @@ for n in np.arange(np.size(good_list_sep,0)):
             nz_ind = np.abs(np.sum(weight2[a],(0,2)))>0
             if np.sum(nz_ind) > 0:
                 if a == 6:
-                    # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/(maxC2)
-                    Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)
+                    # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/(2*maxC2)
+                    Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/2
                 else:                       
                     # Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)/maxC2
                     Convdata2[a][n,:,:] = np.mean(weight2[a][:,nz_ind,:],1)
         
-    
-### to plot figure, uncomment the following:
     
 # fig, axes = plt.subplots(1,1,figsize = (10,8))         
 # axes.plot(xaxis,np.mean(weight[7],1))
 # axes.plot(xaxis,np.mean(np.sum(weight2[a][:,nz_ind,:],1),1))
      
 # fig, axes = plt.subplots(1,1,figsize = (10,8))       
-# for a in [0]:
+# for a in [3]:
 #     list0 = (np.mean(Convdata[a],1) != 0)
 #     # error = np.std(Convdata[a],0)/np.sqrt(np.size(good_list_sep))
 #     # y = ndimage.gaussian_filter(np.mean(Convdata[a],0),2)   
@@ -932,6 +1098,8 @@ max_peak3 ={}
 tv_number = {}
 b_count = {}
 ax_sz = 8
+w_length1 = [16,16,11,11,30,30,20,20]
+w_length2 = [0,0,0,0,31,31,21,21]
 for ind in [0,1]: # 0 is PPCIC, 1 is PPCAC
     b_count[ind] = np.zeros((2,ax_sz))
 
@@ -941,16 +1109,27 @@ for ind in [0,1]: # 0 is PPCIC, 1 is PPCAC
 for ind in [0,1]:
     for f in  np.arange(ax_sz):
         list0 = (np.mean(Convdata[f],1) != 0)
+        # list0 = (np.sum((Convdata[f],())
+        # Lg = len(good_list2)
         Lg = len(good_listRu)
         Lic = np.where(good_listRu <194)
         Lic = Lic[0][-1]
         if ind == 0:
             list0[Lic:Lg] = False # PPCIC
         elif ind == 1:           
-            list0[0:Lic] = False # PPCAC
-
+            list0[0:Lic+1] = False # PPCAC
+        
+        # list0ind = np.arange(Lg)
+        # list0ind = list0ind[list0]
         list0ind = good_listRu[list0]
-        W = ndimage.uniform_filter(Convdata[f][list0,:],[0,0], mode = "mirror")
+        # W = ndimage.uniform_filter(Convdata[f][list0,:],[0,2], mode = "mirror")
+        W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,:],2),[0,0], mode = "mirror")
+        # W = ndimage.uniform_filter(Model_weight[f][list0,:],[0,2], mode = "mirror")
+        # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,0:w_length1[f]],2),[0,0], mode = "mirror")
+        # W = ndimage.uniform_filter(np.sum(Convdata2[f][list0,:,w_length2[f]:],2),[0,0], mode = "mirror")
+        # W = W/int(np.floor(w_length[f]/10)+1)
+        # W = W/int(np.floor(w_length[f]/20)+1)
+        # W = W/int(np.floor(w_length1[f]/10))
         max_peak = np.argmax(np.abs(W),1)
         max_ind = max_peak.argsort()
         
@@ -988,12 +1167,16 @@ for ind in [0,1]:
         b_count[ind][1,f] = np.size(W2,0)
         W3 = np.concatenate((W1,W2), axis = 0)
         tv_number[ind,f] = [np.size(W1,0),np.size(W2,0)]
+        # W3[:,0:8] = 0
+        # W3[:,68:] = 0
         W5[ind,f][0] = W1
         W5[ind,f][1] = W2
-        if f in [4]:
-            clim = [-0, 1]
+        if f in [2]:
+            clim = [-1, 1]
             fig, axes = plt.subplots(1,1,figsize = (10,10))
-            im1 = axes.imshow(W4[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "gray_r")
+            im1 = axes.imshow(W3[:,:],clim = clim, aspect = "auto", interpolation = "None",cmap = "viridis")
+            # im2 = axes[1].imshow(W2, aspect = "auto", interpolation = "None")
+            # axes.set_xlim([,40])
             fig.subplots_adjust(right=0.85)
             cbar_ax = fig.add_axes([0.88, 0.15, 0.04, 0.7])
             fig.colorbar(im1, cax=cbar_ax)
@@ -1002,6 +1185,20 @@ for ind in [0,1]:
         elif ind == 1:           
             W5AC[f] = W3
         # W4IC = W4
+    
+# print(np.size(np.intersect1d(listOv[0],listOv[3])))
+# np.save('PPC_Hist.npy',listOv,allow_pickle = True)
+# np.argmax()
+
+# list0n = good_listRu[list0]
+# ind= 1
+# np.sum((max_peak3[ind,4] > 54) * (max_peak3[ind,4] < 80 ))
+
+# np.sum((max_peak3[ind,4] > 1) * (max_peak3[ind,4] < 40 ))
+# np.sum((max_peak3[ind,4] > 80))
+
+
+
 
 # %% calculate nb of neurons encodin
 
@@ -1015,6 +1212,20 @@ for ind in [0,1]:
 
 test_unique, counts = np.unique(test,return_counts= True)
 
+fig, axes = plt.subplots(1,1,figsize = (10,10))
+
+# sns.histplot(data = counts, stat = "probability")
+sns.histplot(data = counts)
+# axes.set_xlim([0.5, 4.5])
+# axes.set_ylim([0,1])
+# axes.hist(counts)
+
+
+np.mean(counts[54:])
+
+np.std(counts[54:])
+
+stats.ks_2samp(counts[:54], counts[54:])
 
 # %% for each timebin, calculate the number of neurons encoding each TV
 
@@ -1026,7 +1237,7 @@ lstyles = ['solid','dotted','solid','dotted','solid','dotted','solid','solid','s
 
 Lic1 =np.argwhere(test_unique<194)[-1][0] +1 # 99 #134 # 78+1
 Lg1 =len(test_unique)-Lic1
-ind = 0# PPCIC or 1 PPCAC
+ind = 1# PPCIC or 1 PPCAC
 p = 0# positive or 1 negative
 
 fig, axes = plt.subplots(1,1,figsize = (10,5))
@@ -1065,3 +1276,56 @@ for f in np.arange(ax_sz):
         axes.plot(-y,c = cmap[f], linestyle = 'solid', linewidth = 3 )
         axes.set_ylim([-0.20,0])
         
+    
+plt.savefig("Fraction of neurons "+ ".svg")
+# %% plot positive and negative weights separately.
+cmap = ['black','gray','tab:blue','tab:cyan','tab:red','tab:orange','black','green','tab:red','tab:orange','black','green',]
+
+pp = 0
+maxy = np.zeros((2,10))
+for ind in [0,1]:
+    fig, axes = plt.subplots(2,ax_sz,figsize = (50,10),sharex = "all")
+    fig.subplots_adjust(hspace=0)
+    for p in [0,1]:
+        for f in np.arange(ax_sz):
+            if np.size(W5[ind,f][p],0) > 5:
+                y1 = ndimage.gaussian_filter1d(np.sum(W5[ind,f][p],0),1)
+                y1 = y1/(np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0))
+                e1 = np.std(W5[ind,f][p],0)/np.sqrt((np.size(W5[ind,f][0],0)+np.size(W5[ind,f][1],0)))
+                axes[p,f].plot(xaxis,y1,c = cmap[f],linestyle = 'solid', linewidth = 3)
+                axes[p,f].fill_between(xaxis,y1-e1,y1+e1,facecolor = cmap[f],alpha = 0.3)
+                # axes[p,f-3].set_xlim([-4,1])
+                scat = np.zeros((2,np.size(W5IC[f],1)))
+                pcat = np.zeros((2,np.size(W5IC[f],1)))
+                maxy[p,f] = np.max(np.abs(y1)+np.abs(e1))
+                maxy[p,f] = np.max([maxy[p,f],1])
+                for t in np.arange(80):
+                    if p == 0:
+                        s1,p1 = stats.ttest_1samp(W5[ind,f][p][:,t],np.mean(e1),alternative = 'greater')
+                    else:
+                        s1,p1 = stats.ttest_1samp(W5[ind,f][p][:,t],-np.mean(e1),alternative= 'less')
+                    if p1 < 0.05:
+                        scat[0,t] = True
+                        pcat[0,t] = p1
+                c1 = pcat[0,scat[0,:]>0]
+                if p == 0:
+                    axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*maxy[p,f] + 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
+                elif p ==1:
+                    axes[p,f].scatter(xaxis[scat[0,:]>0],np.ones_like(xaxis[scat[0,:]>0])*-maxy[p,f] - 0.1,marker='s',c = np.log10(c1),cmap = 'Greys_r',clim = [-3,-1])
+            else:
+                for ln in np.arange(np.size(W5[ind,f][p],0)):
+                    axes[p,f].plot(xaxis,ndimage.gaussian_filter1d(W5[ind,f][p][ln,:],1),c = cmap[f],linestyle = 'solid', linewidth = 1)
+                if np.size(W5[ind,f][p],0) > 0:
+                    maxy[p,f] = np.max(W5[ind,f][p])
+    
+    for f in np.arange(ax_sz):
+            axes[0,f].set_ylim([0, np.nanmax(maxy[:,f]+0.2)])
+            axes[1,f].set_ylim([-np.nanmax(maxy[:,f]+0.2),0])
+    
+    
+    # axes[0,0].set_ylim([0, 0.45])
+    # axes[1,0].set_ylim([-0.45,0])
+    # axes[0,1].set_ylim([0, 0.35])
+    # axes[1,1].set_ylim([-0.35,0])
+    
+    # plt.savefig("TVencoding"+ str(ind) + "tv" + str(f) + ".svg")
